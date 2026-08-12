@@ -4,35 +4,41 @@
 
 <h3 class="mb-4">Cuenta corriente &mdash; Monotributo</h3>
 
-<div class="card shadow-sm mb-4">
+<div class="card credencial-card shadow-sm mb-4">
   <div class="card-body">
-    <h6 class="card-title">Datos del contribuyente</h6>
-    <form method="post" action="{{ url_for('monotributo_datos') }}" class="row g-2 align-items-end">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <span class="credencial-badge">ARCA</span>
+      <h6 class="card-title mb-0">Datos del contribuyente</h6>
+    </div>
+    <form method="post" action="{{ url_for('monotributo_datos') }}" class="row g-3 align-items-end">
       <div class="col-md-3">
-        <label class="form-label small">Nombre</label>
-        <input type="text" name="contribuyente_nombre" class="form-control form-control-sm" value="{{ contribuyente_nombre }}">
+        <label class="form-label small text-muted mb-1">Nombre</label>
+        <input type="text" name="contribuyente_nombre" class="form-control form-control-sm" value="{{ contribuyente_nombre }}" placeholder="Nombre y apellido">
       </div>
       <div class="col-md-2">
-        <label class="form-label small">CUIT</label>
+        <label class="form-label small text-muted mb-1">CUIT</label>
         <input type="text" name="contribuyente_cuit" class="form-control form-control-sm" value="{{ contribuyente_cuit }}" placeholder="20-XXXXXXXX-X">
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Provincia / lugar</label>
+        <label class="form-label small text-muted mb-1">Provincia / lugar</label>
         <input type="text" name="contribuyente_lugar" class="form-control form-control-sm" value="{{ contribuyente_lugar }}">
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Municipal por defecto ($)</label>
-        <input type="text" name="municipal_default" class="form-control form-control-sm" value="{{ municipal_default }}">
+        <label class="form-label small text-muted mb-1">Municipal por defecto</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">$</span>
+          <input type="text" name="municipal_default" class="form-control" value="{{ municipal_default }}">
+        </div>
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Alta Monotributo</label>
+        <label class="form-label small text-muted mb-1">Alta Monotributo</label>
         <input type="date" name="fecha_alta" class="form-control form-control-sm" value="{{ fecha_alta }}">
       </div>
       <div class="col-md-1">
         <button type="submit" class="btn btn-sm btn-dark w-100">Guardar</button>
       </div>
     </form>
-    <p class="small text-muted mt-2 mb-0">
+    <p class="small text-muted mt-3 mb-0">
       El valor "Municipal por defecto" y la fecha de alta se usan solo para generar meses nuevos.
       Cada fila de la tabla se puede editar de forma individual. Rentas queda en $0 mientras dure la exencion;
       cuando ARCA/Rentas la de por finalizada, cargala mes a mes.
@@ -40,26 +46,61 @@
   </div>
 </div>
 
-<div class="card shadow-sm mb-4">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <h6 class="card-title mb-0">Total pendiente de pago</h6>
-      <div class="fs-4 fw-bold text-danger">$ {{ "{:,.2f}".format(total_pendiente).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card stat-card border-danger h-100">
+      <div class="card-body">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-label">Vencido</div>
+        <div class="stat-value text-danger">$ {{ "{:,.2f}".format(total_vencido).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card h-100">
+      <div class="card-body">
+        <div class="stat-icon">⏳</div>
+        <div class="stat-label">Total a pagar (pendiente)</div>
+        <div class="stat-value">$ {{ "{:,.2f}".format(total_pendiente).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card border-success h-100">
+      <div class="card-body">
+        <div class="stat-icon">✅</div>
+        <div class="stat-label">Meses pagados</div>
+        <div class="stat-value text-success">{{ meses_pagados }} / {{ filas|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card h-100">
+      <div class="card-body">
+        <div class="stat-icon">📅</div>
+        <div class="stat-label">Proximo vencimiento</div>
+        {% if proximo_vencimiento %}
+        <div class="stat-value" style="font-size:1.3rem;">{{ proximo_vencimiento.fecha }}</div>
+        <div class="small text-muted">{{ proximo_vencimiento.periodo_legible }} &middot; $ {{ "{:,.2f}".format(proximo_vencimiento.total).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+        {% else %}
+        <div class="stat-value" style="font-size:1.3rem;">Al dia</div>
+        {% endif %}
+      </div>
     </div>
   </div>
 </div>
 
 <div class="card shadow-sm">
   <div class="card-body">
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
+    <div class="table-responsive monotributo-scroll">
+      <table class="table table-sm align-middle mb-0">
         <thead>
           <tr>
             <th>Mes</th>
+            <th>Vence</th>
             <th>Categoria</th>
             <th class="text-end">Impositivo</th>
-            <th class="text-end">Jubilacion</th>
-            <th class="text-end">Obra Social</th>
+            <th class="text-end">Aportes</th>
             <th class="text-end">Rentas</th>
             <th class="text-end">Municipal</th>
             <th class="text-end">Total</th>
@@ -70,39 +111,48 @@
         </thead>
         <tbody>
           {% for f in filas %}
-          <tr class="{{ 'table-success' if f.pagado else '' }}">
+          <tr class="{{ 'fila-pagada' if f.pagado else ('fila-vencida' if f.vencido else '') }}">
             <form method="post" action="{{ url_for('monotributo_actualizar', periodo=f.periodo) }}" id="form-{{ f.periodo }}">
-            <td class="fw-semibold">{{ f.periodo_legible }}</td>
+            <td class="fw-semibold text-nowrap">
+              {{ f.periodo_legible }}
+              {% if f.pagado %}<span class="ms-1">✅</span>{% elif f.vencido %}<span class="ms-1">⚠️</span>{% endif %}
+            </td>
+            <td class="text-nowrap small text-muted">{{ f.vencimiento }}</td>
             <td>
-              <select name="categoria" form="form-{{ f.periodo }}" class="form-select form-select-sm" style="width:70px;" onchange="this.form.requestSubmit()">
+              <select name="categoria" form="form-{{ f.periodo }}" class="form-select form-select-sm" style="width:80px;" onchange="this.form.requestSubmit()">
                 {% for c in categorias %}
                 <option value="{{ c }}" {{ 'selected' if c == f.categoria else '' }}>{{ c }}</option>
                 {% endfor %}
               </select>
             </td>
-            <td class="text-end">$ {{ "{:,.2f}".format(f.impositivo).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-            <td class="text-end">$ {{ "{:,.2f}".format(f.jubilacion).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-            <td class="text-end">$ {{ "{:,.2f}".format(f.obra_social).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-            <td class="text-end" style="min-width:110px;">
-              <input type="text" name="rentas" form="form-{{ f.periodo }}" value="{{ '%.2f'|format(f.rentas) }}"
-                     class="form-control form-control-sm text-end" onblur="this.form.requestSubmit()">
+            <td class="text-end text-nowrap">$ {{ "{:,.2f}".format(f.impositivo).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="text-end text-nowrap">$ {{ "{:,.2f}".format(f.aportes).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td style="min-width:120px;">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text">$</span>
+                <input type="text" name="rentas" form="form-{{ f.periodo }}" value="{{ '%.2f'|format(f.rentas) }}"
+                       class="form-control text-end" onblur="this.form.requestSubmit()">
+              </div>
             </td>
-            <td class="text-end" style="min-width:110px;">
-              <input type="text" name="municipal" form="form-{{ f.periodo }}" value="{{ '%.2f'|format(f.municipal) }}"
-                     class="form-control form-control-sm text-end" onblur="this.form.requestSubmit()">
+            <td style="min-width:120px;">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text">$</span>
+                <input type="text" name="municipal" form="form-{{ f.periodo }}" value="{{ '%.2f'|format(f.municipal) }}"
+                       class="form-control text-end" onblur="this.form.requestSubmit()">
+              </div>
             </td>
-            <td class="text-end fw-bold">$ {{ "{:,.2f}".format(f.total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="text-end fw-bold text-nowrap">$ {{ "{:,.2f}".format(f.total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
             <td style="min-width:150px;">
               <input type="date" name="fecha_pago" form="form-{{ f.periodo }}" value="{{ f.fecha_pago }}"
                      class="form-control form-control-sm" onchange="this.form.requestSubmit()">
             </td>
             <td>
-              <select name="pagado" form="form-{{ f.periodo }}" class="form-select form-select-sm" style="width:75px;" onchange="this.form.requestSubmit()">
+              <select name="pagado" form="form-{{ f.periodo }}" class="form-select form-select-sm" style="width:80px;" onchange="this.form.requestSubmit()">
                 <option value="0" {{ 'selected' if not f.pagado else '' }}>No</option>
                 <option value="1" {{ 'selected' if f.pagado else '' }}>Si</option>
               </select>
             </td>
-            <td style="min-width:180px;">
+            <td style="min-width:170px;">
               <input type="text" name="observaciones" form="form-{{ f.periodo }}" value="{{ f.observaciones }}"
                      class="form-control form-control-sm" onblur="this.form.requestSubmit()">
             </td>
@@ -114,9 +164,9 @@
         </tbody>
       </table>
     </div>
-    <p class="small text-muted mb-0">
-      Impositivo, Jubilacion y Obra Social se calculan segun la categoria elegida y la tabla vigente desde {{ vigencia }}.
-      Si cambia la categoria en un mes, esos tres valores se recalculan solos.
+    <p class="small text-muted mt-3 mb-0">
+      Impositivo y Aportes (jubilacion + obra social) se calculan segun la categoria elegida y la tabla vigente desde {{ vigencia }}.
+      Si cambia la categoria en un mes, esos valores se recalculan solos. El vencimiento es el dia 20 de cada mes (o el proximo dia habil si cae fin de semana).
     </p>
   </div>
 </div>

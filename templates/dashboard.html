@@ -2,7 +2,10 @@
 {% block titulo %}Panel{% endblock %}
 {% block contenido %}
 
-<h3 class="mb-4">Panel del mes</h3>
+<div class="mb-4">
+  <h2 class="fw-bold mb-0" style="font-family:'Poppins',sans-serif;">{{ nombre_negocio or "Tifón Lavandería" }}</h2>
+  <p class="text-muted mb-0">Resumen de {{ mes_nombre }}</p>
+</div>
 
 <div class="row g-3 mb-4">
   <div class="col-md-4">
@@ -45,10 +48,8 @@
   </div>
   <div class="col-md-5">
     <div class="card shadow-sm h-100">
-      <div class="card-body">
+      <div class="card-body d-flex flex-column">
         <h6 class="card-title">Monotributo &mdash; categoria {{ categoria_actual }}</h6>
-        <p class="mb-1 small text-muted">Facturacion acumulada (ultimos 12 meses)</p>
-        <p class="fs-5 fw-bold mb-2">$ {{ "{:,.2f}".format(facturacion_12m).replace(",", "X").replace(".", ",").replace("X", ".") }}</p>
         {% set pct = porcentaje_tope if porcentaje_tope <= 100 else 100 %}
         <div class="progress mb-2" style="height: 18px;">
           <div class="progress-bar {{ 'bg-danger' if porcentaje_tope >= 90 else ('bg-warning' if porcentaje_tope >= 75 else 'bg-success') }}"
@@ -56,14 +57,14 @@
             {{ "%.1f"|format(porcentaje_tope) }}%
           </div>
         </div>
-        <p class="small text-muted mb-1">Tope categoria {{ categoria_actual }}: $ {{ "{:,.0f}".format(cat_info.tope_anual).replace(",", ".") }} (vigente desde {{ vigencia }})</p>
         {% if porcentaje_tope >= 90 %}
-          <div class="alert alert-danger py-2 px-2 small mb-0">Estas cerca o superaste el tope. Categoria sugerida: <strong>{{ categoria_sugerida.cat }}</strong>. Conviene revisar la recategorizacion con el contador/a.</div>
+          <div class="alert alert-danger py-2 px-2 small mb-3">Estas cerca o superaste el tope. Categoria sugerida: <strong>{{ categoria_sugerida.cat }}</strong>.</div>
         {% elif porcentaje_tope >= 75 %}
-          <div class="alert alert-warning py-2 px-2 small mb-0">Vas superando el 75% del tope anual. Prestale atencion en los proximos meses.</div>
+          <div class="alert alert-warning py-2 px-2 small mb-3">Vas superando el 75% del tope anual.</div>
         {% else %}
-          <div class="alert alert-success py-2 px-2 small mb-0">Facturacion dentro del rango de la categoria.</div>
+          <div class="alert alert-success py-2 px-2 small mb-3">Facturacion dentro del rango de la categoria.</div>
         {% endif %}
+        <a href="{{ url_for('monotributo') }}" class="mt-auto small fw-semibold text-decoration-none">Ver cuenta &rarr;</a>
       </div>
     </div>
   </div>
@@ -90,8 +91,7 @@
         {% endfor %}
       </tbody>
     </table>
-    <a href="{{ url_for('ingresos') }}" class="btn btn-sm btn-success">+ Cargar ingreso</a>
-    <a href="{{ url_for('gastos') }}" class="btn btn-sm btn-outline-danger">+ Cargar gasto</a>
+    <a href="{{ url_for('reportes') }}" class="small fw-semibold text-decoration-none">Ver todos en Reportes &rarr;</a>
   </div>
 </div>
 

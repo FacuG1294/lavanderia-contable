@@ -1,7 +1,7 @@
 import io
 import os
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from functools import wraps
 
 import openpyxl
@@ -26,6 +26,27 @@ INGRESO_CATEGORIAS = ["Lavado", "Secado", "Planchado", "Combo (lavado+secado)", 
 GASTO_CATEGORIAS = ["Insumos", "Alquiler", "Luz", "Agua", "Gas", "Sueldos", "Mantenimiento", "Monotributo/Impuestos", "Otro"]
 MEDIOS_PAGO = ["Efectivo", "Transferencia", "Tarjeta debito", "Tarjeta credito", "Billetera virtual"]
 MESES_A_GENERAR_ADELANTE = 12
+
+DIAS_ES = {0: "Lun", 1: "Mar", 2: "Mie", 3: "Jue", 4: "Vie", 5: "Sab", 6: "Dom"}
+MESES_LARGO_ES = {
+    1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+    7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
+}
+
+
+def fecha_vencimiento_monotributo(year, month):
+    """Vencimiento del monotributo: dia 20 del mes. Si cae sabado o domingo,
+    pasa al primer dia habil siguiente (regla estandar de ARCA)."""
+    d = date(year, month, 20)
+    if d.weekday() == 5:  # sabado
+        d += timedelta(days=2)
+    elif d.weekday() == 6:  # domingo
+        d += timedelta(days=1)
+    return d
+
+
+def fecha_corta_es(d):
+    return f"{DIAS_ES[d.weekday()]} {d.day:02d}/{d.month:02d}"
 
 
 # ---------- DB ----------
@@ -270,6 +291,7 @@ def dashboard():
         meses_ingresos=meses_ingresos,
         meses_gastos=meses_gastos,
         vigencia=VIGENCIA,
+        mes_nombre=f"{MESES_LARGO_ES[month]} {year}",
     )
 
 
@@ -491,7 +513,7 @@ def config():
 
     return render_template(
         "config.html",
-        nombre_negocio=get_setting("nombre_negocio", "Tifon Lavanderia"),
+        nombre_negocio=get_setting("nombre_negocio", "Tifón Lavandería"),
         categoria_actual=get_setting("categoria_monotributo", "B"),
         categorias=CATEGORIAS_MONOTRIBUTO,
         vigencia=VIGENCIA,
@@ -538,26 +560,48 @@ def monotributo():
         "SELECT * FROM monotributo_cuenta ORDER BY periodo"
     ).fetchall()
 
+    hoy = date.today()
+
     filas = []
     total_pendiente = 0.0
+    total_vencido = 0.0
+    meses_pagados = 0
+    proximo_vencimiento = None
     for f in filas_db:
         cat_info = get_categoria(f["categoria"]) or CATEGORIAS_MONOTRIBUTO[0]
         rentas = f["rentas"] or 0
         municipal = f["municipal"] or 0
-        total = cat_info["imp_integrado"] + cat_info["aporte_sipa"] + cat_info["aporte_os"] + rentas + municipal
-        if not f["pagado"]:
+        aportes = cat_info["aporte_sipa"] + cat_info["aporte_os"]
+        total = cat_info["imp_integrado"] + aportes + rentas + municipal
+
+        y, m = [int(p) for p in f["periodo"].split("-")]
+        fecha_venc = fecha_vencimiento_monotributo(y, m)
+        vencido = (not f["pagado"]) and fecha_venc < hoy
+
+        if f["pagado"]:
+            meses_pagados += 1
+        else:
             total_pendiente += total
+            if vencido:
+                total_vencido += total
+            if proximo_vencimiento is None:
+                proximo_vencimiento = {
+                    "fecha": fecha_corta_es(fecha_venc) + f"/{y}",
+                    "periodo_legible": periodo_legible(f["periodo"]),
+                    "total": total,
+                }
         filas.append({
             "periodo": f["periodo"],
             "periodo_legible": periodo_legible(f["periodo"]),
+            "vencimiento": fecha_corta_es(fecha_venc),
             "categoria": f["categoria"],
             "impositivo": cat_info["imp_integrado"],
-            "jubilacion": cat_info["aporte_sipa"],
-            "obra_social": cat_info["aporte_os"],
+            "aportes": aportes,
             "rentas": rentas,
             "municipal": municipal,
             "total": total,
             "pagado": f["pagado"],
+            "vencido": vencido,
             "fecha_pago": f["fecha_pago"] or "",
             "observaciones": f["observaciones"] or "",
         })
@@ -566,6 +610,9 @@ def monotributo():
         "monotributo.html",
         filas=filas,
         total_pendiente=total_pendiente,
+        total_vencido=total_vencido,
+        meses_pagados=meses_pagados,
+        proximo_vencimiento=proximo_vencimiento,
         categorias=[c["cat"] for c in CATEGORIAS_MONOTRIBUTO],
         contribuyente_nombre=get_setting("contribuyente_nombre", ""),
         contribuyente_cuit=get_setting("contribuyente_cuit", ""),
@@ -831,7 +878,7 @@ def facturacion_importar():
 
 @app.context_processor
 def inject_globals():
-    return {"nombre_negocio": get_setting("nombre_negocio", "Tifon Lavanderia") if session.get("logged_in") else ""}
+    return {"nombre_negocio": get_setting("nombre_negocio", "Tifón Lavandería") if session.get("logged_in") else ""}
 
 
 init_db()
