@@ -17,8 +17,8 @@
 [data-theme="dark"] {
   --bg: #0f1a2e;
   --card-bg: #17233d;
-  --text-main: #e7ecf5;
-  --text-muted: #9fadc2;
+  --text-main: #ffffff;
+  --text-muted: #c3cde0;
   --shadow-soft: 0 6px 20px rgba(0, 0, 0, 0.3);
   --shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.45);
 }
@@ -40,12 +40,41 @@ body {
   color: var(--text-main);
 }
 
+[data-theme="dark"] {
+  --bs-body-color: var(--text-main);
+  --bs-emphasis-color: var(--text-main);
+  --bs-secondary-color: var(--text-muted);
+  --bs-border-color: #2c3c60;
+  --bs-table-bg: var(--card-bg);
+  --bs-table-color: var(--text-main);
+  --bs-table-striped-bg: #1c2a48;
+  --bs-table-hover-bg: #1c2a48;
+}
+
 [data-theme="dark"] .table {
   color: var(--text-main);
 }
 
-[data-theme="dark"] .table tbody tr {
+[data-theme="dark"] .table > :not(caption) > * > * {
   background-color: var(--card-bg);
+  color: var(--text-main);
+  box-shadow: none;
+}
+
+[data-theme="dark"] .text-muted {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .text-success {
+  color: #3fd189 !important;
+}
+
+[data-theme="dark"] .text-danger {
+  color: #f2726f !important;
+}
+
+[data-theme="dark"] .stat-value {
+  color: var(--text-main);
 }
 
 [data-theme="dark"] .form-control,
@@ -56,6 +85,10 @@ body {
   color: var(--text-main);
 }
 
+[data-theme="dark"] .form-control::placeholder {
+  color: #6b7c9a;
+}
+
 [data-theme="dark"] .fila-pagada {
   background-color: rgba(25, 135, 84, 0.15) !important;
 }
@@ -64,23 +97,35 @@ body {
   background-color: rgba(220, 53, 69, 0.15) !important;
 }
 
-/* ---------- Theme toggle ---------- */
-.theme-toggle {
-  display: inline-flex;
+/* ---------- Theme toggle (floating) ---------- */
+.theme-toggle-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--brand-1);
+  border: 1px solid var(--accent);
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  background: rgba(255, 255, 255, 0.12);
-  border: none;
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
-  color: #fff;
-  font-size: 0.85rem;
+  justify-content: center;
+  font-size: 1.2rem;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  z-index: 1030;
+  transition: transform 0.15s ease;
 }
 
-.theme-toggle:hover {
-  background: rgba(255, 255, 255, 0.22);
+.theme-toggle-fab:hover {
+  transform: scale(1.08);
+}
+
+.navbar-brand .nav-link[href*="config"],
+a.nav-link[aria-label="Configuracion"] {
+  font-size: 1.1rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 h1, h2, h3, h4, h5, h6, .navbar-brand {

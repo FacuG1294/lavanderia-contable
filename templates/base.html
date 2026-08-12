@@ -31,19 +31,19 @@
         <li class="nav-item"><a class="nav-link" href="{{ url_for('reportes') }}">Reportes</a></li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('facturacion') }}">Facturacion</a></li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('monotributo') }}">Monotributo</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('config') }}">Configuracion</a></li>
       </ul>
       <ul class="navbar-nav align-items-lg-center">
-        <li class="nav-item me-lg-2">
-          <button type="button" class="theme-toggle" id="themeToggle" title="Cambiar modo claro/oscuro">
-            <span id="themeIcon">🌙</span><span id="themeLabel">Oscuro</span>
-          </button>
+        <li class="nav-item me-lg-1">
+          <a class="nav-link" href="{{ url_for('config') }}" title="Configuracion" aria-label="Configuracion">⚙️</a>
         </li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Salir</a></li>
       </ul>
     </div>
   </div>
 </nav>
+<button type="button" class="theme-toggle-fab" id="themeToggle" title="Cambiar modo claro/oscuro" aria-label="Cambiar modo claro/oscuro">
+  <span id="themeIcon">🌙</span>
+</button>
 {% endif %}
 
 <div class="container pb-5">
@@ -67,16 +67,9 @@
     var btn = document.getElementById('themeToggle');
     if (!btn) return;
     var icon = document.getElementById('themeIcon');
-    var label = document.getElementById('themeLabel');
     function actualizar() {
       var tema = document.documentElement.getAttribute('data-theme') || 'light';
-      if (tema === 'dark') {
-        icon.textContent = '☀️';
-        label.textContent = 'Claro';
-      } else {
-        icon.textContent = '🌙';
-        label.textContent = 'Oscuro';
-      }
+      icon.textContent = tema === 'dark' ? '☀️' : '🌙';
     }
     actualizar();
     btn.addEventListener('click', function () {

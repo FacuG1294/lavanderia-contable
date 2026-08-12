@@ -90,16 +90,16 @@
         <table class="table table-sm table-hover align-middle">
           <thead>
             <tr>
-              <th>Fecha</th><th>Categoria</th><th>Medio</th><th>{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }}</th>
+              <th class="text-nowrap">Fecha</th><th>Categoria</th><th>Medio</th><th>{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }}</th>
               {% if tipo == 'ingreso' %}<th>Facturado</th>{% endif %}
               {% if tipo == 'gasto' %}<th>Cuotas</th>{% endif %}
-              <th>Nota</th><th class="text-end">Monto</th><th></th>
+              <th>Nota</th><th class="text-end text-nowrap">Monto</th><th></th>
             </tr>
           </thead>
           <tbody>
             {% for f in filas %}
             <tr>
-              <td>{{ f.fecha }}</td>
+              <td class="text-nowrap">{{ f.fecha }}</td>
               <td>{{ f.categoria }}</td>
               <td>{{ f.medio_pago or "-" }}</td>
               <td>{{ f.contraparte or "-" }}</td>
@@ -116,7 +116,7 @@
               </td>
               {% endif %}
               {% if tipo == 'gasto' %}
-              <td>
+              <td class="text-nowrap">
                 {% if f.en_cuotas %}
                   <span class="badge bg-secondary">{{ f.cantidad_cuotas or '?' }}x $ {{ "{:,.2f}".format(f.valor_cuota or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</span>
                 {% else %}
@@ -125,7 +125,7 @@
               </td>
               {% endif %}
               <td>{{ f.nota or "-" }}</td>
-              <td class="text-end">$ {{ "{:,.2f}".format(f.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+              <td class="text-end text-nowrap">$ {{ "{:,.2f}".format(f.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
               <td class="text-end">
                 <form method="post" action="{{ url_for('eliminar_movimiento', mov_id=f.id) }}" onsubmit="return confirm('¿Eliminar este movimiento?');">
                   <button type="submit" class="btn btn-sm btn-outline-secondary">Borrar</button>
