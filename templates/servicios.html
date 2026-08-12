@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block titulo %}Servicios y Precios{% endblock %}
+{% block contenido %}
+
+<h3 class="mb-4">Servicios y Precios</h3>
+<p class="text-muted small mb-4">Lista de referencia. Los precios se usan para autocompletar el monto al cargar un Ingreso.</p>
+
+<div class="row g-3 mb-4">
+  {% for seccion in orden_secciones %}
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-title">{{ seccion }}</h6>
+        <table class="table table-sm align-middle mb-0">
+          <tbody>
+            {% for s in servicios_grupos[seccion] %}
+            <tr>
+              <form method="post" action="{{ url_for('servicios_actualizar', servicio_id=s.id) }}" id="form-serv-{{ s.id }}">
+                <td>
+                  <input type="text" name="nombre" form="form-serv-{{ s.id }}" value="{{ s.nombre }}"
+                         class="form-control form-control-sm" onblur="this.form.requestSubmit()">
+                </td>
+                <td style="width:150px;">
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">$</span>
+                    <input type="text" name="precio" form="form-serv-{{ s.id }}" value="{{ '%.2f'|format(s.precio) }}"
+                           class="form-control text-end" onblur="this.form.requestSubmit()">
+                  </div>
+                </td>
+              </form>
+              <td style="width:40px;">
+                <form method="post" action="{{ url_for('servicios_eliminar', servicio_id=s.id) }}"
+                      onsubmit="return confirm('¿Eliminar este servicio?');">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">✕</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h6 class="card-title">+ Agregar servicio</h6>
+    <form method="post" action="{{ url_for('servicios_agregar') }}" class="row g-2 align-items-end" id="formAgregarServicio">
+      <div class="col-md-3">
+        <label class="form-label small text-muted mb-1">Seccion</label>
+        <select name="seccion" class="form-select form-select-sm" id="seccionSelect" onchange="toggleSeccionNueva()">
+          {% for seccion in orden_secciones %}
+          <option value="{{ seccion }}">{{ seccion }}</option>
+          {% endfor %}
+          <option value="__nueva__">+ Nueva seccion...</option>
+        </select>
+      </div>
+      <div class="col-md-3" id="seccionNuevaWrap" style="display:none;">
+        <label class="form-label small text-muted mb-1">Nombre de la nueva seccion</label>
+        <input type="text" name="seccion_nueva" class="form-control form-control-sm" placeholder="Ej: Alfombras">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted mb-1">Servicio</label>
+        <input type="text" name="nombre" class="form-control form-control-sm" placeholder="Nombre del servicio" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small text-muted mb-1">Precio</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">$</span>
+          <input type="text" name="precio" class="form-control" placeholder="0.00" required>
+        </div>
+      </div>
+      <div class="col-md-1">
+        <button type="submit" class="btn btn-sm btn-success w-100">Agregar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleSeccionNueva() {
+    var sel = document.getElementById('seccionSelect');
+    var wrap = document.getElementById('seccionNuevaWrap');
+    if (!sel || !wrap) return;
+    wrap.style.display = sel.value === '__nueva__' ? 'block' : 'none';
+  }
+</script>
+{% endblock %}

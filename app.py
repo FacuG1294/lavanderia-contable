@@ -16,6 +16,16 @@ from monotributo_data import (
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "lavanderia.db")
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+BACKEND = "postgres" if DATABASE_URL else "sqlite"
+
+if BACKEND == "postgres":
+    import psycopg2
+    import psycopg2.extras
+    IntegrityError = psycopg2.IntegrityError
+else:
+    IntegrityError = sqlite3.IntegrityError
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave-en-produccion")
 
@@ -50,11 +60,47 @@ def fecha_corta_es(d):
 
 
 # ---------- DB ----------
+# Capa fina de compatibilidad: en produccion usamos Postgres (persistente,
+# no se borra en cada redeploy/restart). Si no hay DATABASE_URL configurada
+# (por ejemplo al correr en local para pruebas), usamos SQLite como antes.
+
+class PGConnWrapper:
+    """Envuelve una conexion psycopg2 para que se use igual que sqlite3.Connection:
+    db.execute(sql_con_signos_de_pregunta, params) -> cursor con filas tipo dict."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        sql_pg = sql.replace("?", "%s")
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql_pg, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+
+def _connect():
+    if BACKEND == "postgres":
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = False
+        return PGConnWrapper(conn)
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = _connect()
     return g.db
 
 
@@ -66,61 +112,136 @@ def close_db(exception=None):
 
 
 def _column_names(db, table):
-    return {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+    if BACKEND == "postgres":
+        rows = db.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+            (table,),
+        ).fetchall()
+        return {row["column_name"] for row in rows}
+    else:
+        rows = db.execute(f"PRAGMA table_info({table})").fetchall()
+        return {row["name"] for row in rows}
 
 
 def init_db():
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
+    db = _connect()
 
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipo TEXT NOT NULL CHECK(tipo IN ('ingreso','gasto')),
-            fecha TEXT NOT NULL,
-            categoria TEXT NOT NULL,
-            monto REAL NOT NULL,
-            medio_pago TEXT,
-            contraparte TEXT,
-            nota TEXT,
-            creado_en TEXT NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS monotributo_cuenta (
-            periodo TEXT PRIMARY KEY,
-            categoria TEXT NOT NULL,
-            rentas REAL NOT NULL DEFAULT 0,
-            municipal REAL NOT NULL DEFAULT 0,
-            pagado INTEGER NOT NULL DEFAULT 0,
-            fecha_pago TEXT,
-            observaciones TEXT
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS comprobantes_arca (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha TEXT,
-            tipo TEXT,
-            punto_venta INTEGER,
-            numero_desde INTEGER,
-            numero_hasta INTEGER,
-            receptor_doc TEXT,
-            receptor_nombre TEXT,
-            importe_total REAL,
-            archivo_origen TEXT,
-            importado_en TEXT,
-            ingreso_id INTEGER,
-            conciliado INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(tipo, punto_venta, numero_desde)
-        )
-    """)
+    if BACKEND == "postgres":
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                id SERIAL PRIMARY KEY,
+                tipo TEXT NOT NULL CHECK(tipo IN ('ingreso','gasto')),
+                fecha TEXT NOT NULL,
+                categoria TEXT NOT NULL,
+                monto REAL NOT NULL,
+                medio_pago TEXT,
+                contraparte TEXT,
+                nota TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS monotributo_cuenta (
+                periodo TEXT PRIMARY KEY,
+                categoria TEXT NOT NULL,
+                rentas REAL NOT NULL DEFAULT 0,
+                municipal REAL NOT NULL DEFAULT 0,
+                pagado INTEGER NOT NULL DEFAULT 0,
+                fecha_pago TEXT,
+                observaciones TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS comprobantes_arca (
+                id SERIAL PRIMARY KEY,
+                fecha TEXT,
+                tipo TEXT,
+                punto_venta INTEGER,
+                numero_desde INTEGER,
+                numero_hasta INTEGER,
+                receptor_doc TEXT,
+                receptor_nombre TEXT,
+                importe_total REAL,
+                archivo_origen TEXT,
+                importado_en TEXT,
+                ingreso_id INTEGER,
+                conciliado INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(tipo, punto_venta, numero_desde)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS servicios_precios (
+                id SERIAL PRIMARY KEY,
+                seccion TEXT NOT NULL,
+                nombre TEXT NOT NULL,
+                precio REAL NOT NULL DEFAULT 0,
+                orden INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+    else:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo TEXT NOT NULL CHECK(tipo IN ('ingreso','gasto')),
+                fecha TEXT NOT NULL,
+                categoria TEXT NOT NULL,
+                monto REAL NOT NULL,
+                medio_pago TEXT,
+                contraparte TEXT,
+                nota TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS monotributo_cuenta (
+                periodo TEXT PRIMARY KEY,
+                categoria TEXT NOT NULL,
+                rentas REAL NOT NULL DEFAULT 0,
+                municipal REAL NOT NULL DEFAULT 0,
+                pagado INTEGER NOT NULL DEFAULT 0,
+                fecha_pago TEXT,
+                observaciones TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS comprobantes_arca (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha TEXT,
+                tipo TEXT,
+                punto_venta INTEGER,
+                numero_desde INTEGER,
+                numero_hasta INTEGER,
+                receptor_doc TEXT,
+                receptor_nombre TEXT,
+                importe_total REAL,
+                archivo_origen TEXT,
+                importado_en TEXT,
+                ingreso_id INTEGER,
+                conciliado INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(tipo, punto_venta, numero_desde)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS servicios_precios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                seccion TEXT NOT NULL,
+                nombre TEXT NOT NULL,
+                precio REAL NOT NULL DEFAULT 0,
+                orden INTEGER NOT NULL DEFAULT 0
+            )
+        """)
 
     # --- Migracion: agregar columnas nuevas a transactions si faltan ---
     cols = _column_names(db, "transactions")
@@ -134,6 +255,31 @@ def init_db():
     for col, tipo in nuevas_columnas.items():
         if col not in cols:
             db.execute(f"ALTER TABLE transactions ADD COLUMN {col} {tipo}")
+
+    # --- Semilla inicial de Servicios y Precios (solo si la tabla esta vacia) ---
+    hay_servicios = db.execute("SELECT COUNT(*) AS c FROM servicios_precios").fetchone()["c"]
+    if not hay_servicios:
+        seed = [
+            ("Ropa", "Docena de prendas livianas", 8000),
+            ("Ropa", "Jeans largos", 3000),
+            ("Ropa", "Camperas gruesas", 3000),
+            ("Ropa", "Camperones/Parkas/Tapados", 4000),
+            ("Baño", "Toallas", 2000),
+            ("Baño", "Toallones", 3000),
+            ("Ropa de cama", "Juego de sábanas (2 y 2½ plazas)", 3000),
+            ("Ropa de cama", "Acolchado (2 y 2½ plazas)", 15000),
+            ("Ropa de cama", "Frazada (2 y 2½ plazas)", 12000),
+            ("Ropa de cama", "Manta/Cobertor (2 y 2½ plazas)", 10000),
+            ("Ropa de cama", "Acolchado (1 y 1½ plaza)", 10000),
+            ("Ropa de cama", "Frazada (1 y 1½ plaza)", 8000),
+            ("Ropa de cama", "Manta/Cobertor (1 y 1½ plaza)", 6000),
+            ("Mascotas", "Ropita", 4000),
+        ]
+        for i, (seccion, nombre, precio) in enumerate(seed):
+            db.execute(
+                "INSERT INTO servicios_precios (seccion, nombre, precio, orden) VALUES (?, ?, ?, ?)",
+                (seccion, nombre, precio, i),
+            )
 
     db.commit()
     db.close()
@@ -295,6 +441,22 @@ def dashboard():
     )
 
 
+def _servicios_agrupados():
+    db = get_db()
+    filas = db.execute(
+        "SELECT * FROM servicios_precios ORDER BY seccion, orden, id"
+    ).fetchall()
+    grupos = {}
+    orden_secciones = []
+    for f in filas:
+        sec = f["seccion"]
+        if sec not in grupos:
+            grupos[sec] = []
+            orden_secciones.append(sec)
+        grupos[sec].append(f)
+    return orden_secciones, grupos
+
+
 @app.route("/ingresos", methods=["GET", "POST"])
 @login_required
 def ingresos():
@@ -328,6 +490,7 @@ def ingresos():
     filas = db.execute(
         "SELECT * FROM transactions WHERE tipo='ingreso' ORDER BY fecha DESC, id DESC LIMIT 100"
     ).fetchall()
+    orden_secciones, servicios_grupos = _servicios_agrupados()
     return render_template(
         "movimientos.html",
         tipo="ingreso",
@@ -336,6 +499,8 @@ def ingresos():
         medios_pago=MEDIOS_PAGO,
         filas=filas,
         hoy=date.today().isoformat(),
+        orden_secciones=orden_secciones,
+        servicios_grupos=servicios_grupos,
     )
 
 
@@ -518,6 +683,78 @@ def config():
         categorias=CATEGORIAS_MONOTRIBUTO,
         vigencia=VIGENCIA,
     )
+
+
+# ---------- Servicios y Precios ----------
+
+@app.route("/servicios", methods=["GET"])
+@login_required
+def servicios():
+    orden_secciones, grupos = _servicios_agrupados()
+    return render_template(
+        "servicios.html",
+        orden_secciones=orden_secciones,
+        servicios_grupos=grupos,
+    )
+
+
+@app.route("/servicios/agregar", methods=["POST"])
+@login_required
+def servicios_agregar():
+    db = get_db()
+    seccion = (request.form.get("seccion") or "").strip()
+    seccion_nueva = (request.form.get("seccion_nueva") or "").strip()
+    if seccion == "__nueva__":
+        seccion = seccion_nueva
+    nombre = (request.form.get("nombre") or "").strip()
+    try:
+        precio = float((request.form.get("precio") or "0").replace(",", "."))
+    except ValueError:
+        precio = 0
+
+    if not seccion or not nombre:
+        flash("Falta la seccion o el nombre del servicio", "error")
+        return redirect(url_for("servicios"))
+
+    max_orden = db.execute(
+        "SELECT COALESCE(MAX(orden),0) AS m FROM servicios_precios WHERE seccion = ?",
+        (seccion,),
+    ).fetchone()["m"]
+
+    db.execute(
+        "INSERT INTO servicios_precios (seccion, nombre, precio, orden) VALUES (?, ?, ?, ?)",
+        (seccion, nombre, precio, (max_orden or 0) + 1),
+    )
+    db.commit()
+    flash("Servicio agregado", "success")
+    return redirect(url_for("servicios"))
+
+
+@app.route("/servicios/<int:servicio_id>", methods=["POST"])
+@login_required
+def servicios_actualizar(servicio_id):
+    db = get_db()
+    nombre = (request.form.get("nombre") or "").strip()
+    try:
+        precio = float((request.form.get("precio") or "0").replace(",", "."))
+    except ValueError:
+        precio = 0
+    db.execute(
+        "UPDATE servicios_precios SET nombre = ?, precio = ? WHERE id = ?",
+        (nombre, precio, servicio_id),
+    )
+    db.commit()
+    return redirect(url_for("servicios"))
+
+
+@app.route("/servicios/<int:servicio_id>/eliminar", methods=["POST"])
+@login_required
+def servicios_eliminar(servicio_id):
+    db = get_db()
+    db.execute("DELETE FROM servicios_precios WHERE id = ?", (servicio_id,))
+    db.commit()
+    flash("Servicio eliminado", "success")
+    return redirect(url_for("servicios"))
 
 
 # ---------- Monotributo: cuenta corriente ----------
@@ -899,11 +1136,12 @@ def facturacion_importar():
                 (fecha, tipo, punto_venta, numero_desde, numero_hasta, receptor_doc, receptor_nombre,
                  importe_total, archivo.filename, datetime.now().isoformat()),
             )
+            db.commit()
             nuevos += 1
-        except sqlite3.IntegrityError:
+        except IntegrityError:
+            db.rollback()
             continue  # ya estaba importado (mismo tipo + punto de venta + numero)
 
-    db.commit()
     _conciliar_comprobantes(db)
 
     if nuevos:

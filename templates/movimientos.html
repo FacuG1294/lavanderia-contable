@@ -20,9 +20,24 @@
               {% endfor %}
             </select>
           </div>
+          {% if tipo == 'ingreso' and orden_secciones %}
+          <div class="mb-2">
+            <label class="form-label">Servicio <span class="text-muted small">(opcional, autocompleta el monto)</span></label>
+            <select class="form-select" id="servicioSelect" onchange="autocompletarMonto()">
+              <option value="">-- Elegir servicio --</option>
+              {% for seccion in orden_secciones %}
+              <optgroup label="{{ seccion }}">
+                {% for s in servicios_grupos[seccion] %}
+                <option value="{{ '%.2f'|format(s.precio) }}">{{ s.nombre }} (${{ '{:,.0f}'.format(s.precio).replace(',', '.') }})</option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
           <div class="mb-2">
             <label class="form-label">Monto ($)</label>
-            <input type="text" name="monto" class="form-control" placeholder="0.00" required>
+            <input type="text" name="monto" id="montoInput" class="form-control" placeholder="0.00" required>
           </div>
           <div class="mb-2">
             <label class="form-label">Medio de pago</label>
@@ -169,6 +184,12 @@
     var campos = document.getElementById('cuotasCampos');
     if (!chk || !campos) return;
     campos.style.display = chk.checked ? 'block' : 'none';
+  }
+  function autocompletarMonto() {
+    var sel = document.getElementById('servicioSelect');
+    var monto = document.getElementById('montoInput');
+    if (!sel || !monto || !sel.value) return;
+    monto.value = sel.value;
   }
   document.addEventListener('DOMContentLoaded', function () {
     toggleNumFactura();
