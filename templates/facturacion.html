@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block titulo %}Facturacion{% endblock %}
+{% block contenido %}
+
+<h3 class="mb-4">Facturacion</h3>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h6 class="card-title">Importar comprobantes de ARCA</h6>
+    <p class="small text-muted">
+      Subi el excel "Mis Comprobantes Emitidos" que se descarga desde el portal de ARCA (Monotributo &rarr; Mis Comprobantes).
+      El sistema los cruza automaticamente con los ingresos cargados (por numero de factura, o por fecha y monto si coinciden).
+    </p>
+    <form method="post" action="{{ url_for('facturacion_importar') }}" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap">
+      <input type="file" name="archivo" accept=".xlsx" class="form-control" style="max-width:400px;" required>
+      <button type="submit" class="btn btn-dark">Importar</button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card stat-card border-success h-100">
+      <div class="card-body">
+        <div class="stat-icon">📥</div>
+        <div class="stat-label">Comprobantes importados</div>
+        <div class="stat-value">{{ total_importados }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card border-success h-100">
+      <div class="card-body">
+        <div class="stat-icon">✅</div>
+        <div class="stat-label">Conciliados con un ingreso</div>
+        <div class="stat-value text-success">{{ total_conciliados }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card border-danger h-100">
+      <div class="card-body">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-label">Sin vincular</div>
+        <div class="stat-value text-danger">{{ comprobantes_sin_ingreso|length }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if comprobantes_sin_ingreso %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h6 class="card-title">Comprobantes de ARCA sin un ingreso cargado en el sistema</h6>
+    <p class="small text-muted">Puede ser que ese ingreso todavia no se haya cargado en "Ingresos", o que se haya cargado con otra fecha/monto.</p>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover">
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>N°</th><th>Cliente</th><th class="text-end">Importe</th></tr></thead>
+        <tbody>
+          {% for c in comprobantes_sin_ingreso %}
+          <tr>
+            <td>{{ c.fecha }}</td>
+            <td>{{ c.tipo }}</td>
+            <td>{{ formatear_numero(c.punto_venta, c.numero_desde) }}</td>
+            <td>{{ c.receptor_nombre or "Consumidor Final" }}</td>
+            <td class="text-end">$ {{ "{:,.2f}".format(c.importe_total or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if ingresos_sin_comprobante %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h6 class="card-title">Ingresos marcados como facturados sin comprobante encontrado</h6>
+    <p class="small text-muted">Revisa el numero de factura cargado, o importa un excel de ARCA mas actualizado.</p>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover">
+        <thead><tr><th>Fecha</th><th>Categoria</th><th>N° cargado</th><th>Cliente</th><th class="text-end">Monto</th></tr></thead>
+        <tbody>
+          {% for i in ingresos_sin_comprobante %}
+          <tr>
+            <td>{{ i.fecha }}</td>
+            <td>{{ i.categoria }}</td>
+            <td>{{ i.numero_factura or "-" }}</td>
+            <td>{{ i.contraparte or "-" }}</td>
+            <td class="text-end">$ {{ "{:,.2f}".format(i.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h6 class="card-title">Todos los comprobantes importados</h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead>
+          <tr><th>Fecha</th><th>Tipo</th><th>N°</th><th>Cliente</th><th class="text-end">Importe</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          {% for c in comprobantes %}
+          <tr>
+            <td>{{ c.fecha }}</td>
+            <td>{{ c.tipo }}</td>
+            <td>{{ formatear_numero(c.punto_venta, c.numero_desde) }}</td>
+            <td>{{ c.receptor_nombre or "Consumidor Final" }}</td>
+            <td class="text-end">$ {{ "{:,.2f}".format(c.importe_total or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td>
+              {% if c.conciliado %}
+                <span class="badge bg-success">Conciliado</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Sin vincular</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted">Todavia no importaste ningun comprobante.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

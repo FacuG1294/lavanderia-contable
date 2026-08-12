@@ -26,12 +26,48 @@
           </div>
           <div class="mb-2">
             <label class="form-label">Medio de pago</label>
-            <select name="medio_pago" class="form-select">
+            <select name="medio_pago" class="form-select" id="medioPago" {% if tipo == 'gasto' %}onchange="toggleCuotas()"{% endif %}>
               {% for mp in medios_pago %}
               <option value="{{ mp }}">{{ mp }}</option>
               {% endfor %}
             </select>
           </div>
+
+          {% if tipo == 'ingreso' %}
+          <div class="mb-2">
+            <label class="form-label">¿Se facturó?</label>
+            <select name="facturado" class="form-select" id="facturadoSelect" onchange="toggleNumFactura()">
+              <option value="0">No</option>
+              <option value="1">Si</option>
+            </select>
+          </div>
+          <div class="mb-2" id="numFacturaWrap" style="display:none;">
+            <label class="form-label">N° de factura</label>
+            <input type="text" name="numero_factura" class="form-control" placeholder="0001-00000123">
+          </div>
+          {% endif %}
+
+          {% if tipo == 'gasto' %}
+          <div class="mb-2" id="cuotasWrap" style="display:none;">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="en_cuotas" value="1" id="enCuotas" onchange="toggleCuotasCampos()">
+              <label class="form-check-label" for="enCuotas">Comprado en cuotas</label>
+            </div>
+            <div id="cuotasCampos" style="display:none;">
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label">Cantidad de cuotas</label>
+                  <input type="number" name="cantidad_cuotas" class="form-control" min="2" placeholder="3">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Valor c/cuota ($)</label>
+                  <input type="text" name="valor_cuota" class="form-control" placeholder="0.00">
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+
           <div class="mb-2">
             <label class="form-label">{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }} (opcional)</label>
             <input type="text" name="contraparte" class="form-control">
@@ -55,6 +91,8 @@
           <thead>
             <tr>
               <th>Fecha</th><th>Categoria</th><th>Medio</th><th>{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }}</th>
+              {% if tipo == 'ingreso' %}<th>Facturado</th>{% endif %}
+              {% if tipo == 'gasto' %}<th>Cuotas</th>{% endif %}
               <th>Nota</th><th class="text-end">Monto</th><th></th>
             </tr>
           </thead>
@@ -65,6 +103,27 @@
               <td>{{ f.categoria }}</td>
               <td>{{ f.medio_pago or "-" }}</td>
               <td>{{ f.contraparte or "-" }}</td>
+              {% if tipo == 'ingreso' %}
+              <td>
+                <form method="post" action="{{ url_for('actualizar_facturacion', mov_id=f.id) }}" class="d-flex gap-1 align-items-center flex-nowrap">
+                  <select name="facturado" class="form-select form-select-sm" style="width:auto;" onchange="this.form.requestSubmit()">
+                    <option value="0" {{ 'selected' if not f.facturado else '' }}>No</option>
+                    <option value="1" {{ 'selected' if f.facturado else '' }}>Si</option>
+                  </select>
+                  <input type="text" name="numero_factura" value="{{ f.numero_factura or '' }}" placeholder="N° factura"
+                         class="form-control form-control-sm" style="width:130px;" onblur="this.form.requestSubmit()">
+                </form>
+              </td>
+              {% endif %}
+              {% if tipo == 'gasto' %}
+              <td>
+                {% if f.en_cuotas %}
+                  <span class="badge bg-secondary">{{ f.cantidad_cuotas or '?' }}x $ {{ "{:,.2f}".format(f.valor_cuota or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</span>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              {% endif %}
               <td>{{ f.nota or "-" }}</td>
               <td class="text-end">$ {{ "{:,.2f}".format(f.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
               <td class="text-end">
@@ -74,7 +133,7 @@
               </td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="text-center text-muted">No hay movimientos todavia.</td></tr>
+            <tr><td colspan="8" class="text-center text-muted">No hay movimientos todavia.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -84,4 +143,36 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleNumFactura() {
+    var sel = document.getElementById('facturadoSelect');
+    var wrap = document.getElementById('numFacturaWrap');
+    if (!sel || !wrap) return;
+    wrap.style.display = sel.value === '1' ? 'block' : 'none';
+  }
+  function toggleCuotas() {
+    var medio = document.getElementById('medioPago');
+    var wrap = document.getElementById('cuotasWrap');
+    if (!medio || !wrap) return;
+    wrap.style.display = medio.value === 'Tarjeta credito' ? 'block' : 'none';
+    if (medio.value !== 'Tarjeta credito') {
+      var chk = document.getElementById('enCuotas');
+      if (chk) { chk.checked = false; }
+      toggleCuotasCampos();
+    }
+  }
+  function toggleCuotasCampos() {
+    var chk = document.getElementById('enCuotas');
+    var campos = document.getElementById('cuotasCampos');
+    if (!chk || !campos) return;
+    campos.style.display = chk.checked ? 'block' : 'none';
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    toggleNumFactura();
+    toggleCuotas();
+  });
+</script>
 {% endblock %}
