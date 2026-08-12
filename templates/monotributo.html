@@ -164,10 +164,15 @@
         </tbody>
       </table>
     </div>
-    <p class="small text-muted mt-3 mb-0">
-      Impositivo y Aportes (jubilacion + obra social) se calculan segun la categoria elegida y la tabla vigente desde {{ vigencia }}.
-      Si cambia la categoria en un mes, esos valores se recalculan solos. El vencimiento es el dia 20 de cada mes (o el proximo dia habil si cae fin de semana).
-    </p>
+    <div class="d-flex justify-content-between align-items-center mt-3">
+      <p class="small text-muted mb-0">
+        Impositivo y Aportes (jubilacion + obra social) se calculan segun la categoria elegida y la tabla vigente desde {{ vigencia }}.
+        Si cambia la categoria en un mes, esos valores se recalculan solos. El vencimiento es el dia 20 de cada mes (o el proximo dia habil si cae fin de semana).
+      </p>
+      <form method="post" action="{{ url_for('monotributo_agregar_mes') }}" class="ms-3">
+        <button type="submit" class="btn btn-sm btn-dark text-nowrap">+ Agregar mes</button>
+      </form>
+    </div>
   </div>
 </div>
 

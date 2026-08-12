@@ -666,6 +666,43 @@ def monotributo_actualizar(periodo):
     return redirect(url_for("monotributo"))
 
 
+@app.route("/monotributo/agregar-mes", methods=["POST"])
+@login_required
+def monotributo_agregar_mes():
+    db = get_db()
+    ultima = db.execute(
+        "SELECT periodo, categoria FROM monotributo_cuenta ORDER BY periodo DESC LIMIT 1"
+    ).fetchone()
+
+    if ultima:
+        y, m = [int(p) for p in ultima["periodo"].split("-")]
+        y1, m1 = add_months(y, m, 1)
+        categoria_default = ultima["categoria"]
+    else:
+        hoy = date.today()
+        y1, m1 = hoy.year, hoy.month
+        categoria_default = get_setting("categoria_monotributo", "B")
+
+    nuevo_periodo = periodo_str(y1, m1)
+    municipal_default = float(get_setting("monotributo_municipal_default", "0") or 0)
+
+    existe = db.execute(
+        "SELECT 1 FROM monotributo_cuenta WHERE periodo=?", (nuevo_periodo,)
+    ).fetchone()
+    if not existe:
+        db.execute(
+            "INSERT INTO monotributo_cuenta (periodo, categoria, rentas, municipal, pagado, fecha_pago, observaciones) "
+            "VALUES (?, ?, 0, ?, 0, NULL, '')",
+            (nuevo_periodo, categoria_default, municipal_default),
+        )
+        db.commit()
+        flash(f"Se agrego el mes {periodo_legible(nuevo_periodo)}", "success")
+    else:
+        flash(f"El mes {periodo_legible(nuevo_periodo)} ya estaba cargado", "success")
+
+    return redirect(url_for("monotributo"))
+
+
 # ---------- Facturacion: importar comprobantes de ARCA ----------
 
 def _parse_numero_factura(texto):
