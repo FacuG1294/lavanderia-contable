@@ -6,26 +6,29 @@
 
 <div class="row g-3 mb-4">
   <div class="col-md-4">
-    <div class="card border-success shadow-sm h-100">
+    <div class="card stat-card border-success h-100">
       <div class="card-body">
-        <div class="text-muted small">Ingresos del mes</div>
-        <div class="fs-3 fw-bold text-success">$ {{ "{:,.2f}".format(ingresos_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+        <div class="stat-icon">💧</div>
+        <div class="stat-label">Ingresos del mes</div>
+        <div class="stat-value text-success">$ {{ "{:,.2f}".format(ingresos_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
       </div>
     </div>
   </div>
   <div class="col-md-4">
-    <div class="card border-danger shadow-sm h-100">
+    <div class="card stat-card border-danger h-100">
       <div class="card-body">
-        <div class="text-muted small">Gastos del mes</div>
-        <div class="fs-3 fw-bold text-danger">$ {{ "{:,.2f}".format(gastos_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+        <div class="stat-icon">🧾</div>
+        <div class="stat-label">Gastos del mes</div>
+        <div class="stat-value text-danger">$ {{ "{:,.2f}".format(gastos_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
       </div>
     </div>
   </div>
   <div class="col-md-4">
-    <div class="card {{ 'border-success' if balance_mes >= 0 else 'border-danger' }} shadow-sm h-100">
+    <div class="card stat-card {{ 'border-success' if balance_mes >= 0 else 'border-danger' }} h-100">
       <div class="card-body">
-        <div class="text-muted small">Balance del mes</div>
-        <div class="fs-3 fw-bold {{ 'text-success' if balance_mes >= 0 else 'text-danger' }}">$ {{ "{:,.2f}".format(balance_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+        <div class="stat-icon">📊</div>
+        <div class="stat-label">Balance del mes</div>
+        <div class="stat-value {{ 'text-success' if balance_mes >= 0 else 'text-danger' }}">$ {{ "{:,.2f}".format(balance_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
       </div>
     </div>
   </div>

@@ -1,9 +1,224 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --brand-1: #1f3864;
+  --brand-2: #14264a;
+  --accent: #d9a441;
+  --accent-soft: #2e5395;
+  --bg: #eef1f6;
+  --card-radius: 1rem;
+  --shadow-soft: 0 6px 20px rgba(20, 38, 74, 0.08);
+  --shadow-hover: 0 10px 28px rgba(20, 38, 74, 0.16);
+}
+
 body {
-  background-color: #f7f7f9;
+  background: var(--bg);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #1f2d33;
 }
-.card {
-  border-radius: 0.75rem;
+
+h1, h2, h3, h4, h5, h6, .navbar-brand {
+  font-family: 'Poppins', 'Inter', sans-serif;
 }
+
+/* ---------- Navbar ---------- */
+.navbar {
+  background: linear-gradient(100deg, var(--brand-2), var(--brand-1) 60%, var(--accent)) !important;
+  box-shadow: 0 4px 16px rgba(13, 127, 166, 0.25);
+}
+
 .navbar-brand {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.navbar-brand img {
+  height: 42px;
+  width: auto;
+  border-radius: 8px;
+  display: block;
+}
+
+.navbar .nav-link {
+  font-weight: 500;
+  border-radius: 0.5rem;
+  transition: background-color 0.15s ease;
+}
+
+.navbar .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.navbar .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ---------- Cards ---------- */
+.card {
+  border: none;
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-soft);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+.card.border-success, .card.border-danger {
+  border: none !important;
+  border-top: 4px solid var(--bs-success) !important;
+}
+
+.card.border-danger {
+  border-top-color: var(--bs-danger) !important;
+}
+
+.card-title {
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
+  font-size: 0.95rem;
+  color: #33474e;
+}
+
+/* ---------- Stat cards on dashboard ---------- */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card .stat-icon {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  font-size: 2.1rem;
+  opacity: 0.18;
+}
+
+.stat-card .stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7c82;
+  font-weight: 600;
+}
+
+.stat-card .stat-value {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin-top: 0.15rem;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  border-radius: 0.6rem;
+  font-weight: 500;
+}
+
+.btn-success {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn-success:hover {
+  background-color: #1aa88f;
+  border-color: #1aa88f;
+}
+
+.btn-dark {
+  background-color: var(--brand-2);
+  border-color: var(--brand-2);
+}
+
+.btn-dark:hover {
+  background-color: #0a6788;
+  border-color: #0a6788;
+}
+
+/* ---------- Tables ---------- */
+.table {
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.table thead th {
+  background-color: var(--brand-2);
+  color: #fff;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  border: none;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+
+.table thead tr:first-child th:first-child {
+  border-top-left-radius: 0.6rem;
+}
+
+.table thead tr:first-child th:last-child {
+  border-top-right-radius: 0.6rem;
+}
+
+.badge {
+  font-weight: 500;
+  padding: 0.4em 0.7em;
+  border-radius: 0.5rem;
+}
+
+/* ---------- Progress bar ---------- */
+.progress {
+  border-radius: 999px;
+  background-color: #e4edf0;
+}
+
+.progress-bar {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* ---------- Login screen ---------- */
+.login-wrapper {
+  min-height: calc(100vh - 2rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow-hover);
+  overflow: hidden;
+}
+
+.login-card .login-header {
+  background: linear-gradient(120deg, var(--brand-2), var(--brand-1) 70%, var(--accent-soft));
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.login-card .login-header .login-logo {
+  max-width: 220px;
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.login-card .card-body {
+  padding: 1.75rem 1.5rem;
+}
+
+/* ---------- Alerts ---------- */
+.alert {
+  border: none;
+  border-radius: 0.75rem;
 }

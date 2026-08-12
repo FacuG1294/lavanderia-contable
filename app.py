@@ -386,7 +386,7 @@ def config():
 
     return render_template(
         "config.html",
-        nombre_negocio=get_setting("nombre_negocio", "Mi Lavanderia"),
+        nombre_negocio=get_setting("nombre_negocio", "Tifon Lavanderia"),
         categoria_actual=get_setting("categoria_monotributo", "B"),
         categorias=CATEGORIAS_MONOTRIBUTO,
         vigencia=VIGENCIA,
@@ -395,7 +395,7 @@ def config():
 
 @app.context_processor
 def inject_globals():
-    return {"nombre_negocio": get_setting("nombre_negocio", "Mi Lavanderia") if session.get("logged_in") else ""}
+    return {"nombre_negocio": get_setting("nombre_negocio", "Tifon Lavanderia") if session.get("logged_in") else ""}
 
 
 init_db()
