@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block titulo %}Panel{% endblock %}
+{% block contenido %}
+
+<h3 class="mb-4">Panel del mes</h3>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-success shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Ingresos del mes</div>
+        <div class="fs-3 fw-bold text-success">$ {{ "{:,.2f}".format(ingresos_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-danger shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Gastos del mes</div>
+        <div class="fs-3 fw-bold text-danger">$ {{ "{:,.2f}".format(gastos_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card {{ 'border-success' if balance_mes >= 0 else 'border-danger' }} shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Balance del mes</div>
+        <div class="fs-3 fw-bold {{ 'text-success' if balance_mes >= 0 else 'text-danger' }}">$ {{ "{:,.2f}".format(balance_mes).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-title">Ultimos 6 meses</h6>
+        <canvas id="chartMeses" height="140"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-title">Monotributo &mdash; categoria {{ categoria_actual }}</h6>
+        <p class="mb-1 small text-muted">Facturacion acumulada (ultimos 12 meses)</p>
+        <p class="fs-5 fw-bold mb-2">$ {{ "{:,.2f}".format(facturacion_12m).replace(",", "X").replace(".", ",").replace("X", ".") }}</p>
+        {% set pct = porcentaje_tope if porcentaje_tope <= 100 else 100 %}
+        <div class="progress mb-2" style="height: 18px;">
+          <div class="progress-bar {{ 'bg-danger' if porcentaje_tope >= 90 else ('bg-warning' if porcentaje_tope >= 75 else 'bg-success') }}"
+               role="progressbar" style="width: {{ pct }}%;">
+            {{ "%.1f"|format(porcentaje_tope) }}%
+          </div>
+        </div>
+        <p class="small text-muted mb-1">Tope categoria {{ categoria_actual }}: $ {{ "{:,.0f}".format(cat_info.tope_anual).replace(",", ".") }} (vigente desde {{ vigencia }})</p>
+        {% if porcentaje_tope >= 90 %}
+          <div class="alert alert-danger py-2 px-2 small mb-0">Estas cerca o superaste el tope. Categoria sugerida: <strong>{{ categoria_sugerida.cat }}</strong>. Conviene revisar la recategorizacion con el contador/a.</div>
+        {% elif porcentaje_tope >= 75 %}
+          <div class="alert alert-warning py-2 px-2 small mb-0">Vas superando el 75% del tope anual. Prestale atencion en los proximos meses.</div>
+        {% else %}
+          <div class="alert alert-success py-2 px-2 small mb-0">Facturacion dentro del rango de la categoria.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h6 class="card-title">Ultimos movimientos</h6>
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr><th>Fecha</th><th>Tipo</th><th>Categoria</th><th>Medio</th><th class="text-end">Monto</th></tr>
+      </thead>
+      <tbody>
+        {% for m in ultimos_mov %}
+        <tr>
+          <td>{{ m.fecha }}</td>
+          <td><span class="badge {{ 'bg-success' if m.tipo == 'ingreso' else 'bg-danger' }}">{{ m.tipo }}</span></td>
+          <td>{{ m.categoria }}</td>
+          <td>{{ m.medio_pago or "-" }}</td>
+          <td class="text-end">$ {{ "{:,.2f}".format(m.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-center text-muted">Todavia no hay movimientos cargados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <a href="{{ url_for('ingresos') }}" class="btn btn-sm btn-success">+ Cargar ingreso</a>
+    <a href="{{ url_for('gastos') }}" class="btn btn-sm btn-outline-danger">+ Cargar gasto</a>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+  const ctx = document.getElementById('chartMeses');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: {{ meses_labels|tojson }},
+      datasets: [
+        { label: 'Ingresos', data: {{ meses_ingresos|tojson }}, backgroundColor: '#198754' },
+        { label: 'Gastos', data: {{ meses_gastos|tojson }}, backgroundColor: '#dc3545' }
+      ]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+</script>
+{% endblock %}

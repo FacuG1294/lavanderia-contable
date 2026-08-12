@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block titulo %}Configuracion{% endblock %}
+{% block contenido %}
+
+<h3 class="mb-4">Configuracion</h3>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Datos del negocio</h5>
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label">Nombre del negocio</label>
+            <input type="text" name="nombre_negocio" class="form-control" value="{{ nombre_negocio }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Categoria de Monotributo actual</label>
+            <select name="categoria_monotributo" class="form-select">
+              {% for c in categorias %}
+              <option value="{{ c.cat }}" {{ 'selected' if c.cat == categoria_actual else '' }}>
+                {{ c.cat }} &mdash; tope $ {{ "{:,.0f}".format(c.tope_anual).replace(",", ".") }}/año
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Se usa para calcular el semaforo del panel principal. Tabla vigente desde {{ vigencia }}.</div>
+          </div>
+          <button type="submit" class="btn btn-dark">Guardar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Sobre las categorias de Monotributo</h5>
+        <p class="small text-muted">
+          Los topes de facturacion se actualizan por ARCA cada febrero y agosto.
+          Los valores cargados en este sistema corresponden a la tabla vigente
+          desde el {{ vigencia }}. Cuando salga una actualizacion nueva hay que
+          avisar para actualizar los montos (archivo <code>monotributo_data.py</code>).
+        </p>
+        <p class="small text-muted mb-0">
+          Esta info es orientativa y no reemplaza a un contador/a. La categoria
+          tambien depende de superficie del local, energia consumida y alquileres,
+          no solo de la facturacion.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

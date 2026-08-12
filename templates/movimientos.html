@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block contenido %}
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Nuevo {{ 'ingreso' if tipo == 'ingreso' else 'gasto' }}</h5>
+        <form method="post">
+          <div class="mb-2">
+            <label class="form-label">Fecha</label>
+            <input type="date" name="fecha" class="form-control" value="{{ hoy }}" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Categoria</label>
+            <select name="categoria" class="form-select" required>
+              {% for c in categorias %}
+              <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Monto ($)</label>
+            <input type="text" name="monto" class="form-control" placeholder="0.00" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Medio de pago</label>
+            <select name="medio_pago" class="form-select">
+              {% for mp in medios_pago %}
+              <option value="{{ mp }}">{{ mp }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }} (opcional)</label>
+            <input type="text" name="contraparte" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nota (opcional)</label>
+            <input type="text" name="nota" class="form-control">
+          </div>
+          <button type="submit" class="btn {{ 'btn-success' if tipo == 'ingreso' else 'btn-danger' }} w-100">Guardar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Ultimos {{ titulo|lower }}</h5>
+        <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Fecha</th><th>Categoria</th><th>Medio</th><th>{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }}</th>
+              <th>Nota</th><th class="text-end">Monto</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in filas %}
+            <tr>
+              <td>{{ f.fecha }}</td>
+              <td>{{ f.categoria }}</td>
+              <td>{{ f.medio_pago or "-" }}</td>
+              <td>{{ f.contraparte or "-" }}</td>
+              <td>{{ f.nota or "-" }}</td>
+              <td class="text-end">$ {{ "{:,.2f}".format(f.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+              <td class="text-end">
+                <form method="post" action="{{ url_for('eliminar_movimiento', mov_id=f.id) }}" onsubmit="return confirm('¿Eliminar este movimiento?');">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">Borrar</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted">No hay movimientos todavia.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
