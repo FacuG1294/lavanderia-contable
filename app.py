@@ -184,6 +184,18 @@ def init_db():
                 orden INTEGER NOT NULL DEFAULT 0
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS clientes (
+                id SERIAL PRIMARY KEY,
+                nombre TEXT NOT NULL,
+                tipo TEXT NOT NULL DEFAULT 'Particular',
+                telefono TEXT,
+                cuit TEXT,
+                direccion TEXT,
+                notas TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
@@ -240,6 +252,18 @@ def init_db():
                 nombre TEXT NOT NULL,
                 precio REAL NOT NULL DEFAULT 0,
                 orden INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS clientes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                tipo TEXT NOT NULL DEFAULT 'Particular',
+                telefono TEXT,
+                cuit TEXT,
+                direccion TEXT,
+                notas TEXT,
+                creado_en TEXT NOT NULL
             )
         """)
 
@@ -491,6 +515,9 @@ def ingresos():
         "SELECT * FROM transactions WHERE tipo='ingreso' ORDER BY fecha DESC, id DESC LIMIT 100"
     ).fetchall()
     orden_secciones, servicios_grupos = _servicios_agrupados()
+    nombres_clientes = [
+        row["nombre"] for row in db.execute("SELECT nombre FROM clientes ORDER BY nombre").fetchall()
+    ]
     return render_template(
         "movimientos.html",
         tipo="ingreso",
@@ -501,6 +528,7 @@ def ingresos():
         hoy=date.today().isoformat(),
         orden_secciones=orden_secciones,
         servicios_grupos=servicios_grupos,
+        nombres_clientes=nombres_clientes,
     )
 
 
@@ -755,6 +783,117 @@ def servicios_eliminar(servicio_id):
     db.commit()
     flash("Servicio eliminado", "success")
     return redirect(url_for("servicios"))
+
+
+# ---------- Clientes ----------
+
+def _cliente_stats(db, nombre, hace_60):
+    resumen = db.execute(
+        "SELECT COUNT(*) AS visitas, COALESCE(SUM(monto),0) AS total, MAX(fecha) AS ultima "
+        "FROM transactions WHERE tipo='ingreso' AND LOWER(contraparte) = LOWER(?)",
+        (nombre,),
+    ).fetchone()
+    visitas_recientes = db.execute(
+        "SELECT COUNT(*) AS c FROM transactions "
+        "WHERE tipo='ingreso' AND LOWER(contraparte) = LOWER(?) AND fecha >= ?",
+        (nombre, hace_60),
+    ).fetchone()["c"]
+    historial = db.execute(
+        "SELECT fecha, categoria, monto FROM transactions "
+        "WHERE tipo='ingreso' AND LOWER(contraparte) = LOWER(?) "
+        "ORDER BY fecha DESC, id DESC LIMIT 8",
+        (nombre,),
+    ).fetchall()
+    return {
+        "visitas": resumen["visitas"] or 0,
+        "total": resumen["total"] or 0,
+        "ultima": resumen["ultima"],
+        "frecuente": visitas_recientes >= 5,
+        "historial": historial,
+    }
+
+
+@app.route("/clientes", methods=["GET"])
+@login_required
+def clientes():
+    db = get_db()
+    filas_db = db.execute("SELECT * FROM clientes ORDER BY nombre").fetchall()
+    hace_60 = (date.today() - timedelta(days=60)).isoformat()
+
+    lista = []
+    for c in filas_db:
+        stats = _cliente_stats(db, c["nombre"], hace_60)
+        lista.append({
+            "id": c["id"],
+            "nombre": c["nombre"],
+            "tipo": c["tipo"] or "Particular",
+            "telefono": c["telefono"] or "",
+            "cuit": c["cuit"] or "",
+            "direccion": c["direccion"] or "",
+            "notas": c["notas"] or "",
+            **stats,
+        })
+    lista.sort(key=lambda c: c["total"], reverse=True)
+
+    return render_template("clientes.html", clientes=lista)
+
+
+@app.route("/clientes/agregar", methods=["POST"])
+@login_required
+def clientes_agregar():
+    db = get_db()
+    nombre = (request.form.get("nombre") or "").strip()
+    if not nombre:
+        flash("Falta el nombre del cliente", "error")
+        return redirect(url_for("clientes"))
+
+    db.execute(
+        "INSERT INTO clientes (nombre, tipo, telefono, cuit, direccion, notas, creado_en) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (
+            nombre,
+            request.form.get("tipo") or "Particular",
+            (request.form.get("telefono") or "").strip(),
+            (request.form.get("cuit") or "").strip(),
+            (request.form.get("direccion") or "").strip(),
+            (request.form.get("notas") or "").strip(),
+            datetime.now().isoformat(),
+        ),
+    )
+    db.commit()
+    flash("Cliente agregado", "success")
+    return redirect(url_for("clientes"))
+
+
+@app.route("/clientes/<int:cliente_id>", methods=["POST"])
+@login_required
+def clientes_actualizar(cliente_id):
+    db = get_db()
+    db.execute(
+        "UPDATE clientes SET nombre=?, tipo=?, telefono=?, cuit=?, direccion=?, notas=? WHERE id=?",
+        (
+            (request.form.get("nombre") or "").strip(),
+            request.form.get("tipo") or "Particular",
+            (request.form.get("telefono") or "").strip(),
+            (request.form.get("cuit") or "").strip(),
+            (request.form.get("direccion") or "").strip(),
+            (request.form.get("notas") or "").strip(),
+            cliente_id,
+        ),
+    )
+    db.commit()
+    flash("Cliente actualizado", "success")
+    return redirect(url_for("clientes"))
+
+
+@app.route("/clientes/<int:cliente_id>/eliminar", methods=["POST"])
+@login_required
+def clientes_eliminar(cliente_id):
+    db = get_db()
+    db.execute("DELETE FROM clientes WHERE id = ?", (cliente_id,))
+    db.commit()
+    flash("Cliente eliminado", "success")
+    return redirect(url_for("clientes"))
 
 
 # ---------- Monotributo: cuenta corriente ----------
