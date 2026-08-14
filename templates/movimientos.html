@@ -108,11 +108,11 @@
     <div class="card shadow-sm mb-3">
       <div class="card-body">
         <form method="get" action="{{ url_for('ingresos' if tipo == 'ingreso' else 'gastos') }}" class="row g-2 align-items-end">
-          <div class="col-6 col-md-3">
+          <div class="col-6 col-md-2">
             <label class="form-label small text-muted mb-1">Desde</label>
             <input type="date" name="desde" class="form-control form-control-sm" value="{{ filtros.desde }}">
           </div>
-          <div class="col-6 col-md-3">
+          <div class="col-6 col-md-2">
             <label class="form-label small text-muted mb-1">Hasta</label>
             <input type="date" name="hasta" class="form-control form-control-sm" value="{{ filtros.hasta }}">
           </div>
@@ -125,15 +125,13 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-6 col-md-2">
+          <div class="col-6 col-md-3">
             <label class="form-label small text-muted mb-1">{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }}</label>
             <input type="text" name="contraparte" class="form-control form-control-sm" placeholder="Nombre..." value="{{ filtros.contraparte }}">
           </div>
-          <div class="col-6 col-md-1">
-            <button type="submit" class="btn btn-sm btn-dark w-100">Buscar</button>
-          </div>
-          <div class="col-6 col-md-1">
-            <a href="{{ url_for('ingresos' if tipo == 'ingreso' else 'gastos') }}" class="btn btn-sm btn-outline-secondary w-100">Limpiar</a>
+          <div class="col-12 col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-dark flex-grow-1 text-nowrap" title="Buscar">🔍 Buscar</button>
+            <a href="{{ url_for('ingresos' if tipo == 'ingreso' else 'gastos') }}" class="btn btn-sm btn-outline-secondary flex-grow-1 text-nowrap" title="Limpiar filtros">Limpiar</a>
           </div>
         </form>
       </div>
