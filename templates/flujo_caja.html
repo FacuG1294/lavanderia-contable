@@ -63,7 +63,13 @@
       <canvas id="chartSaldo"></canvas>
     </div>
     {% if proyeccion %}
-    <p class="small text-muted mt-2 mb-0">Proyeccion basada en el promedio diario de ingresos y gastos de los ultimos 30 dias (promedio: $ {{ "{:,.2f}".format(proyeccion.avg_diario).replace(",", "X").replace(".", ",").replace("X", ".") }}/dia).</p>
+    <p class="small text-muted mt-2 mb-0">Proyeccion basada en el promedio diario de ingresos y gastos de los ultimos 30 dias (promedio: $ {{ "{:,.2f}".format(proyeccion.avg_diario).replace(",", "X").replace(".", ",").replace("X", ".") }}/dia){% if proyeccion.monotributo_incluido %}, descontando el Monotributo pendiente{% endif %}.</p>
+    {% if proyeccion.monotributo_incluido %}
+    <p class="small text-muted mt-1 mb-0">
+      Incluye el vencimiento de Monotributo de
+      {% for p in proyeccion.monotributo_incluido %}{{ p.periodo_legible }} (${{ "{:,.2f}".format(p.total).replace(",", "X").replace(".", ",").replace("X", ".") }} el {{ p.fecha.strftime('%d/%m') }}){% if not loop.last %}, {% endif %}{% endfor %}.
+    </p>
+    {% endif %}
     {% endif %}
   </div>
 </div>
