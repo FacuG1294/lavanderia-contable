@@ -420,14 +420,35 @@ def _monotributo_recordatorio(db):
     return None
 
 
+def _monotributo_pagos_y_pendientes(db):
+    """Pagos reales de Monotributo (por fecha_pago) y periodos pendientes con su vencimiento."""
+    _generar_periodos_faltantes(db)
+    filas = db.execute("SELECT * FROM monotributo_cuenta ORDER BY periodo").fetchall()
+
+    pagos = {}
+    pendientes = []
+    for f in filas:
+        cat_info = get_categoria(f["categoria"]) or CATEGORIAS_MONOTRIBUTO[0]
+        total = cat_info["imp_integrado"] + cat_info["aporte_sipa"] + cat_info["aporte_os"] + (f["rentas"] or 0) + (f["municipal"] or 0)
+        if f["pagado"] and f["fecha_pago"]:
+            pagos[f["fecha_pago"]] = pagos.get(f["fecha_pago"], 0.0) + total
+        elif not f["pagado"]:
+            y, m = [int(p) for p in f["periodo"].split("-")]
+            venc = fecha_vencimiento_monotributo(y, m)
+            pendientes.append({"fecha": venc, "total": total, "periodo_legible": periodo_legible(f["periodo"])})
+    return pagos, pendientes
+
+
 def _flujo_caja_datos(db, year, month, agrupacion):
     start, end = month_bounds(year, month)
+    pagos_monotributo, _ = _monotributo_pagos_y_pendientes(db)
 
     saldo_inicial = db.execute(
         "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) AS s "
         "FROM transactions WHERE fecha < ?",
         (start,),
     ).fetchone()["s"]
+    saldo_inicial -= sum(monto for fecha, monto in pagos_monotributo.items() if fecha < start)
 
     movs = db.execute(
         "SELECT fecha, tipo, monto FROM transactions WHERE fecha >= ? AND fecha < ? ORDER BY fecha",
@@ -441,6 +462,11 @@ def _flujo_caja_datos(db, year, month, agrupacion):
             d["ingresos"] += m["monto"]
         else:
             d["gastos"] += m["monto"]
+
+    for fecha, monto in pagos_monotributo.items():
+        if start <= fecha < end:
+            d = por_fecha.setdefault(fecha, {"ingresos": 0.0, "gastos": 0.0})
+            d["gastos"] += monto
 
     ultimo_dia = (date.fromisoformat(end) - timedelta(days=1)).day
     fechas_mes = [date(year, month, d) for d in range(1, ultimo_dia + 1)]
@@ -492,6 +518,8 @@ def _flujo_caja_proyeccion(db, mes_str, saldo_actual):
     if mes_str != hoy.strftime("%Y-%m"):
         return None
 
+    pagos_monotributo, pendientes_monotributo = _monotributo_pagos_y_pendientes(db)
+
     hace_30 = (hoy - timedelta(days=30)).isoformat()
     totales = db.execute(
         "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE 0 END),0) AS ing, "
@@ -499,13 +527,26 @@ def _flujo_caja_proyeccion(db, mes_str, saldo_actual):
         "FROM transactions WHERE fecha >= ? AND fecha <= ?",
         (hace_30, hoy.isoformat()),
     ).fetchone()
-    avg_diario = (totales["ing"] - totales["gas"]) / 30.0
+    gastos_monotributo_30 = sum(
+        monto for fecha, monto in pagos_monotributo.items() if hace_30 <= fecha <= hoy.isoformat()
+    )
+    avg_diario = (totales["ing"] - totales["gas"] - gastos_monotributo_30) / 30.0
+
+    venc_por_fecha = {}
+    for p in pendientes_monotributo:
+        if hoy < p["fecha"] <= hoy + timedelta(days=30):
+            venc_por_fecha[p["fecha"]] = venc_por_fecha.get(p["fecha"], []) + [p]
 
     labels, saldos = [], []
     s = saldo_actual
+    monotributo_incluido = []
     for i in range(1, 31):
         f = hoy + timedelta(days=i)
         s += avg_diario
+        if f in venc_por_fecha:
+            for p in venc_por_fecha[f]:
+                s -= p["total"]
+                monotributo_incluido.append(p)
         labels.append(f"{f.day:02d}/{f.month:02d}")
         saldos.append(round(s, 2))
 
@@ -514,6 +555,7 @@ def _flujo_caja_proyeccion(db, mes_str, saldo_actual):
         "saldo_30d": round(s, 2),
         "labels": labels,
         "saldos": saldos,
+        "monotributo_incluido": monotributo_incluido,
     }
 
 
