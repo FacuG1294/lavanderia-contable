@@ -67,12 +67,19 @@
     <div class="card shadow-sm h-100">
       <div class="card-body d-flex flex-column">
         <h6 class="card-title">Monotributo &mdash; categoria {{ categoria_actual }}</h6>
-        {% set pct = porcentaje_tope if porcentaje_tope <= 100 else 100 %}
-        <div class="progress mb-2" style="height: 18px;">
+        <div class="progress mb-1" style="height: 18px;">
           <div class="progress-bar {{ 'bg-danger' if porcentaje_tope >= 90 else ('bg-warning' if porcentaje_tope >= 75 else 'bg-success') }}"
-               role="progressbar" style="width: {{ pct }}%;">
-            {{ "%.1f"|format(porcentaje_tope) }}%
+               role="progressbar" style="width: {{ pct_en_categoria }}%;">
+            {{ "%.0f"|format(pct_en_categoria) }}%
           </div>
+        </div>
+        <div class="d-flex justify-content-between small text-muted mb-2">
+          <span>$ {{ "{:,.0f}".format(piso_categoria).replace(",", ".") }}</span>
+          <span>$ {{ "{:,.0f}".format(techo_categoria).replace(",", ".") }} (tope cat. {{ categoria_actual }})</span>
+        </div>
+        <div class="small mb-3" style="background: var(--surface-1, #f1f5f4); border-radius:8px; padding:8px 10px;">
+          Facturado (12 meses): <strong>$ {{ "{:,.2f}".format(facturacion_12m).replace(",", "X").replace(".", ",").replace("X", ".") }}</strong><br>
+          <span class="text-muted">Te faltan $ {{ "{:,.2f}".format(falta_para_siguiente).replace(",", "X").replace(".", ",").replace("X", ".") }} para pasar a la categoria siguiente</span>
         </div>
         {% if porcentaje_tope >= 90 %}
           <div class="alert alert-danger py-2 px-2 small mb-3">Estas cerca o superaste el tope. Categoria sugerida: <strong>{{ categoria_sugerida.cat }}</strong>.</div>
