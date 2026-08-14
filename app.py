@@ -282,6 +282,7 @@ def init_db():
         "valor_cuota": "REAL",
         "comprobante_data": "TEXT",
         "comprobante_mime": "TEXT",
+        "servicio": "TEXT",
     }
     for col, tipo in nuevas_columnas.items():
         if col not in cols:
@@ -628,6 +629,23 @@ def dashboard():
         meses_ingresos.append(ing)
         meses_gastos.append(gas)
 
+    top_servicios_filas = db.execute(
+        "SELECT servicio, COUNT(*) AS cant FROM transactions "
+        "WHERE tipo='ingreso' AND servicio IS NOT NULL AND servicio != '' AND fecha >= ? AND fecha < ? "
+        "GROUP BY servicio ORDER BY cant DESC LIMIT 5",
+        (start, end),
+    ).fetchall()
+    top_servicios_labels = [r["servicio"] for r in top_servicios_filas]
+    top_servicios_cant = [r["cant"] for r in top_servicios_filas]
+
+    gastos_cat_filas = db.execute(
+        "SELECT categoria, COALESCE(SUM(monto),0) AS total FROM transactions "
+        "WHERE tipo='gasto' AND fecha >= ? AND fecha < ? GROUP BY categoria ORDER BY total DESC",
+        (start, end),
+    ).fetchall()
+    gastos_cat_labels = [r["categoria"] for r in gastos_cat_filas]
+    gastos_cat_totales = [r["total"] for r in gastos_cat_filas]
+
     return render_template(
         "dashboard.html",
         ingresos_mes=ingresos_mes,
@@ -645,6 +663,10 @@ def dashboard():
         vigencia=VIGENCIA,
         mes_nombre=f"{MESES_LARGO_ES[month]} {year}",
         recordatorio_monotributo=recordatorio_monotributo,
+        top_servicios_labels=top_servicios_labels,
+        top_servicios_cant=top_servicios_cant,
+        gastos_cat_labels=gastos_cat_labels,
+        gastos_cat_totales=gastos_cat_totales,
     )
 
 
@@ -709,8 +731,8 @@ def ingresos():
             return redirect(url_for("ingresos"))
         db.execute(
             "INSERT INTO transactions "
-            "(tipo, fecha, categoria, monto, medio_pago, contraparte, nota, facturado, numero_factura, creado_en) "
-            "VALUES ('ingreso', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(tipo, fecha, categoria, monto, medio_pago, contraparte, nota, facturado, numero_factura, servicio, creado_en) "
+            "VALUES ('ingreso', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 request.form.get("fecha") or date.today().isoformat(),
                 request.form.get("categoria"),
@@ -720,6 +742,7 @@ def ingresos():
                 request.form.get("nota", ""),
                 1 if request.form.get("facturado") == "1" else 0,
                 request.form.get("numero_factura", "").strip(),
+                request.form.get("servicio", "").strip(),
                 datetime.now().isoformat(),
             ),
         )
