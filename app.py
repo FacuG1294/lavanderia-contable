@@ -386,6 +386,40 @@ def periodo_str(year, month):
     return f"{year:04d}-{month:02d}"
 
 
+def _monotributo_recordatorio(db):
+    _generar_periodos_faltantes(db)
+    filas_db = db.execute(
+        "SELECT * FROM monotributo_cuenta ORDER BY periodo"
+    ).fetchall()
+
+    hoy = date.today()
+    for f in filas_db:
+        if f["pagado"]:
+            continue
+        y, m = [int(p) for p in f["periodo"].split("-")]
+        fecha_venc = fecha_vencimiento_monotributo(y, m)
+        dias = (fecha_venc - hoy).days
+
+        estado = None
+        if dias < 0:
+            estado = "vencido"
+        elif dias <= 5:
+            estado = "proximo"
+        if estado is None:
+            return None
+
+        cat_info = get_categoria(f["categoria"]) or CATEGORIAS_MONOTRIBUTO[0]
+        total = cat_info["imp_integrado"] + cat_info["aporte_sipa"] + cat_info["aporte_os"] + (f["rentas"] or 0) + (f["municipal"] or 0)
+        return {
+            "estado": estado,
+            "periodo_legible": periodo_legible(f["periodo"]),
+            "fecha": fecha_corta_es(fecha_venc) + f"/{y}",
+            "total": total,
+            "dias": abs(dias),
+        }
+    return None
+
+
 # ---------- Rutas ----------
 
 @app.route("/")
@@ -421,6 +455,8 @@ def dashboard():
     ultimos_mov = db.execute(
         "SELECT * FROM transactions ORDER BY fecha DESC, id DESC LIMIT 8"
     ).fetchall()
+
+    recordatorio_monotributo = _monotributo_recordatorio(db)
 
     # datos para grafico de los ultimos 6 meses
     periodos = []
@@ -462,6 +498,7 @@ def dashboard():
         meses_gastos=meses_gastos,
         vigencia=VIGENCIA,
         mes_nombre=f"{MESES_LARGO_ES[month]} {year}",
+        recordatorio_monotributo=recordatorio_monotributo,
     )
 
 
