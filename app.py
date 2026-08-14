@@ -201,6 +201,17 @@ def init_db():
                 creado_en TEXT NOT NULL
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS proveedores (
+                id SERIAL PRIMARY KEY,
+                nombre TEXT NOT NULL,
+                rubro TEXT,
+                telefono TEXT,
+                cuit TEXT,
+                notas TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
@@ -267,6 +278,17 @@ def init_db():
                 telefono TEXT,
                 cuit TEXT,
                 direccion TEXT,
+                notas TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS proveedores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                rubro TEXT,
+                telefono TEXT,
+                cuit TEXT,
                 notas TEXT,
                 creado_en TEXT NOT NULL
             )
@@ -854,6 +876,9 @@ def gastos():
         return redirect(url_for("gastos"))
 
     filas, filtros, hay_filtro = _query_movimientos(db, "gasto", request.args)
+    nombres_proveedores = [
+        row["nombre"] for row in db.execute("SELECT nombre FROM proveedores ORDER BY nombre").fetchall()
+    ]
     return render_template(
         "movimientos.html",
         tipo="gasto",
@@ -862,6 +887,7 @@ def gastos():
         medios_pago=MEDIOS_PAGO,
         filas=filas,
         hoy=date.today().isoformat(),
+        nombres_proveedores=nombres_proveedores,
         filtros=filtros,
         hay_filtro=hay_filtro,
     )
@@ -1190,6 +1216,87 @@ def clientes_eliminar(cliente_id):
     db.commit()
     flash("Cliente eliminado", "success")
     return redirect(url_for("clientes"))
+
+
+# ---------- Proveedores ----------
+
+def _proveedor_stats(db, nombre):
+    resumen = db.execute(
+        "SELECT COUNT(*) AS compras, COALESCE(SUM(monto),0) AS total, MAX(fecha) AS ultima "
+        "FROM transactions WHERE tipo='gasto' AND LOWER(contraparte) = LOWER(?)",
+        (nombre,),
+    ).fetchone()
+    historial = db.execute(
+        "SELECT fecha, categoria, monto FROM transactions "
+        "WHERE tipo='gasto' AND LOWER(contraparte) = LOWER(?) "
+        "ORDER BY fecha DESC, id DESC LIMIT 8",
+        (nombre,),
+    ).fetchall()
+    return {
+        "compras": resumen["compras"] or 0,
+        "total": resumen["total"] or 0,
+        "ultima": resumen["ultima"],
+        "historial": historial,
+    }
+
+
+@app.route("/proveedores", methods=["GET"])
+@login_required
+def proveedores():
+    db = get_db()
+    filas_db = db.execute("SELECT * FROM proveedores ORDER BY nombre").fetchall()
+
+    lista = []
+    for p in filas_db:
+        stats = _proveedor_stats(db, p["nombre"])
+        lista.append({
+            "id": p["id"],
+            "nombre": p["nombre"],
+            "rubro": p["rubro"] or "Otro",
+            "telefono": p["telefono"] or "",
+            "cuit": p["cuit"] or "",
+            "notas": p["notas"] or "",
+            **stats,
+        })
+    lista.sort(key=lambda p: p["total"], reverse=True)
+
+    return render_template("proveedores.html", proveedores=lista, rubros=GASTO_CATEGORIAS)
+
+
+@app.route("/proveedores/agregar", methods=["POST"])
+@login_required
+def proveedores_agregar():
+    db = get_db()
+    nombre = (request.form.get("nombre") or "").strip()
+    if not nombre:
+        flash("Falta el nombre del proveedor", "error")
+        return redirect(url_for("proveedores"))
+
+    db.execute(
+        "INSERT INTO proveedores (nombre, rubro, telefono, cuit, notas, creado_en) "
+        "VALUES (?,?,?,?,?,?)",
+        (
+            nombre,
+            request.form.get("rubro") or "Otro",
+            (request.form.get("telefono") or "").strip(),
+            (request.form.get("cuit") or "").strip(),
+            (request.form.get("notas") or "").strip(),
+            datetime.now().isoformat(),
+        ),
+    )
+    db.commit()
+    flash("Proveedor agregado", "success")
+    return redirect(url_for("proveedores"))
+
+
+@app.route("/proveedores/<int:proveedor_id>/eliminar", methods=["POST"])
+@login_required
+def proveedores_eliminar(proveedor_id):
+    db = get_db()
+    db.execute("DELETE FROM proveedores WHERE id = ?", (proveedor_id,))
+    db.commit()
+    flash("Proveedor eliminado", "success")
+    return redirect(url_for("proveedores"))
 
 
 # ---------- Monotributo: cuenta corriente ----------
