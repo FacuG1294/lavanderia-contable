@@ -621,6 +621,15 @@ def dashboard():
     porcentaje_tope = (facturacion_12m / cat_info["tope_anual"] * 100) if cat_info["tope_anual"] else 0
     categoria_sugerida = categoria_por_facturacion(facturacion_12m)
 
+    # Rango de la categoria actual (piso = tope de la categoria anterior, 0 si es la primera)
+    idx_cat = next((i for i, c in enumerate(CATEGORIAS_MONOTRIBUTO) if c["cat"] == categoria_actual), 1)
+    piso_categoria = CATEGORIAS_MONOTRIBUTO[idx_cat - 1]["tope_anual"] if idx_cat > 0 else 0
+    techo_categoria = cat_info["tope_anual"]
+    rango_categoria = techo_categoria - piso_categoria
+    pct_en_categoria = ((facturacion_12m - piso_categoria) / rango_categoria * 100) if rango_categoria else 0
+    pct_en_categoria = max(0, min(100, pct_en_categoria))
+    falta_para_siguiente = max(0, techo_categoria - facturacion_12m)
+
     ultimos_mov = db.execute(
         "SELECT * FROM transactions ORDER BY fecha DESC, id DESC LIMIT 8"
     ).fetchall()
@@ -678,6 +687,10 @@ def dashboard():
         categoria_actual=categoria_actual,
         porcentaje_tope=porcentaje_tope,
         categoria_sugerida=categoria_sugerida,
+        piso_categoria=piso_categoria,
+        techo_categoria=techo_categoria,
+        pct_en_categoria=pct_en_categoria,
+        falta_para_siguiente=falta_para_siguiente,
         ultimos_mov=ultimos_mov,
         meses_labels=meses_labels,
         meses_ingresos=meses_ingresos,
@@ -777,6 +790,14 @@ def ingresos():
     nombres_clientes = [
         row["nombre"] for row in db.execute("SELECT nombre FROM clientes ORDER BY nombre").fetchall()
     ]
+    prefill = None
+    if request.args.get("prefill_monto"):
+        prefill = {
+            "fecha": request.args.get("prefill_fecha", ""),
+            "monto": request.args.get("prefill_monto", ""),
+            "contraparte": request.args.get("prefill_contraparte", ""),
+            "numero_factura": request.args.get("prefill_numero_factura", ""),
+        }
     return render_template(
         "movimientos.html",
         tipo="ingreso",
@@ -790,6 +811,7 @@ def ingresos():
         nombres_clientes=nombres_clientes,
         filtros=filtros,
         hay_filtro=hay_filtro,
+        prefill=prefill,
     )
 
 
@@ -1541,6 +1563,8 @@ def _celda_int(valor):
 
 
 def _conciliar_comprobantes(db):
+    """Cruza automaticamente por numero de factura (exacto, confiable).
+    El cruce manual (por si no coincide el numero) se hace desde la pantalla de Facturacion."""
     pendientes = db.execute("SELECT * FROM comprobantes_arca WHERE ingreso_id IS NULL").fetchall()
     if not pendientes:
         return
@@ -1555,15 +1579,6 @@ def _conciliar_comprobantes(db):
             if _parse_numero_factura(ing["numero_factura"]) == (c["punto_venta"], c["numero_desde"]):
                 match = ing
                 break
-
-        if not match and c["fecha"] and c["importe_total"] is not None:
-            candidatos = db.execute(
-                "SELECT * FROM transactions WHERE tipo='ingreso' AND fecha = ? AND ABS(monto - ?) < 1 "
-                "AND id NOT IN (SELECT ingreso_id FROM comprobantes_arca WHERE ingreso_id IS NOT NULL)",
-                (c["fecha"], c["importe_total"]),
-            ).fetchall()
-            if len(candidatos) == 1:
-                match = candidatos[0]
 
         if match:
             db.execute(
@@ -1600,6 +1615,12 @@ def facturacion():
         "ORDER BY fecha DESC"
     ).fetchall()
 
+    ingresos_vinculables = db.execute(
+        "SELECT * FROM transactions WHERE tipo='ingreso' "
+        "AND id NOT IN (SELECT ingreso_id FROM comprobantes_arca WHERE ingreso_id IS NOT NULL) "
+        "ORDER BY fecha DESC LIMIT 200"
+    ).fetchall()
+
     return render_template(
         "facturacion.html",
         comprobantes=comprobantes,
@@ -1607,8 +1628,59 @@ def facturacion():
         total_conciliados=total_conciliados,
         comprobantes_sin_ingreso=comprobantes_sin_ingreso,
         ingresos_sin_comprobante=ingresos_sin_comprobante,
+        ingresos_vinculables=ingresos_vinculables,
         formatear_numero=_formatear_numero,
     )
+
+
+@app.route("/facturacion/vincular", methods=["POST"])
+@login_required
+def facturacion_vincular():
+    db = get_db()
+    try:
+        comprobante_id = int(request.form.get("comprobante_id", ""))
+        ingreso_id = int(request.form.get("ingreso_id", ""))
+    except (TypeError, ValueError):
+        flash("Elegi un ingreso para vincular", "error")
+        return redirect(url_for("facturacion"))
+
+    comp = db.execute("SELECT * FROM comprobantes_arca WHERE id = ?", (comprobante_id,)).fetchone()
+    ing = db.execute("SELECT * FROM transactions WHERE id = ? AND tipo='ingreso'", (ingreso_id,)).fetchone()
+    if not comp or not ing:
+        flash("No se encontro el comprobante o el ingreso", "error")
+        return redirect(url_for("facturacion"))
+
+    db.execute(
+        "UPDATE comprobantes_arca SET ingreso_id=?, conciliado=1 WHERE id=?",
+        (ingreso_id, comprobante_id),
+    )
+    db.execute(
+        "UPDATE transactions SET facturado=1, "
+        "numero_factura = CASE WHEN numero_factura IS NULL OR numero_factura='' THEN ? ELSE numero_factura END "
+        "WHERE id=?",
+        (_formatear_numero(comp["punto_venta"], comp["numero_desde"]), ingreso_id),
+    )
+    db.commit()
+    flash("Comprobante vinculado", "success")
+    return redirect(url_for("facturacion"))
+
+
+@app.route("/facturacion/desvincular", methods=["POST"])
+@login_required
+def facturacion_desvincular():
+    db = get_db()
+    try:
+        comprobante_id = int(request.form.get("comprobante_id", ""))
+    except (TypeError, ValueError):
+        return redirect(url_for("facturacion"))
+
+    db.execute(
+        "UPDATE comprobantes_arca SET ingreso_id=NULL, conciliado=0 WHERE id=?",
+        (comprobante_id,),
+    )
+    db.commit()
+    flash("Comprobante desvinculado", "success")
+    return redirect(url_for("facturacion"))
 
 
 @app.route("/facturacion/importar", methods=["POST"])
