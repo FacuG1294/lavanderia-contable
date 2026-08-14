@@ -1,3 +1,4 @@
+import base64
 import io
 import os
 import sqlite3
@@ -28,6 +29,10 @@ else:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave-en-produccion")
+# permite adjuntar fotos de comprobantes (base64) sin chocar con los limites por defecto de Werkzeug
+# (MAX_FORM_MEMORY_SIZE no es una config de Flask; hay que tocar el atributo de clase directamente)
+app.request_class.max_form_memory_size = 4 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
 
 APP_USER = os.environ.get("APP_USER", "admin")
 APP_PASS = os.environ.get("APP_PASS", "admin123")
@@ -275,6 +280,8 @@ def init_db():
         "en_cuotas": "INTEGER NOT NULL DEFAULT 0",
         "cantidad_cuotas": "INTEGER",
         "valor_cuota": "REAL",
+        "comprobante_data": "TEXT",
+        "comprobante_mime": "TEXT",
     }
     for col, tipo in nuevas_columnas.items():
         if col not in cols:
@@ -784,10 +791,26 @@ def gastos():
             except ValueError:
                 valor_cuota = None
 
+        comprobante_data = None
+        comprobante_mime = None
+        comprobante_raw = request.form.get("comprobante_data", "")
+        if comprobante_raw.startswith("data:"):
+            try:
+                header, b64 = comprobante_raw.split(",", 1)
+                comprobante_mime = header.split(";")[0].replace("data:", "") or "image/jpeg"
+                if len(b64) > 2_000_000:
+                    flash("La imagen del comprobante es muy pesada, probá con otra foto", "error")
+                    return redirect(url_for("gastos"))
+                comprobante_data = b64
+            except Exception:
+                comprobante_data = None
+                comprobante_mime = None
+
         db.execute(
             "INSERT INTO transactions "
-            "(tipo, fecha, categoria, monto, medio_pago, contraparte, nota, en_cuotas, cantidad_cuotas, valor_cuota, creado_en) "
-            "VALUES ('gasto', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(tipo, fecha, categoria, monto, medio_pago, contraparte, nota, en_cuotas, cantidad_cuotas, valor_cuota, "
+            "comprobante_data, comprobante_mime, creado_en) "
+            "VALUES ('gasto', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 request.form.get("fecha") or date.today().isoformat(),
                 request.form.get("categoria"),
@@ -798,6 +821,8 @@ def gastos():
                 en_cuotas,
                 cantidad_cuotas,
                 valor_cuota,
+                comprobante_data,
+                comprobante_mime,
                 datetime.now().isoformat(),
             ),
         )
@@ -830,6 +855,20 @@ def eliminar_movimiento(mov_id):
     if row and row["tipo"] == "gasto":
         return redirect(url_for("gastos"))
     return redirect(url_for("ingresos"))
+
+
+@app.route("/comprobante/<int:mov_id>")
+@login_required
+def ver_comprobante(mov_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT comprobante_data, comprobante_mime FROM transactions WHERE id = ?",
+        (mov_id,),
+    ).fetchone()
+    if not row or not row["comprobante_data"]:
+        return "Comprobante no encontrado", 404
+    img_bytes = base64.b64decode(row["comprobante_data"])
+    return Response(img_bytes, mimetype=row["comprobante_mime"] or "image/jpeg")
 
 
 @app.route("/reportes", methods=["GET"])
