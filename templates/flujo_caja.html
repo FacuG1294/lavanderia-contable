@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block titulo %}Flujo de caja{% endblock %}
+{% block contenido %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-1">Flujo de caja</h3>
+    <p class="text-muted small mb-0">{{ mes_nombre }} &middot; saldo inicial $ {{ "{:,.2f}".format(saldo_inicial).replace(",", "X").replace(".", ",").replace("X", ".") }}</p>
+  </div>
+  <form method="get" class="d-flex gap-2 align-items-center">
+    <input type="month" name="mes" value="{{ mes_actual }}" class="form-control form-control-sm" onchange="this.form.submit()">
+    <input type="hidden" name="agrupacion" id="agrupacionInput" value="{{ agrupacion }}">
+    <div class="btn-group btn-group-sm" role="group">
+      <button type="button" class="btn {{ 'btn-dark' if agrupacion == 'diario' else 'btn-outline-dark' }}" onclick="cambiarAgrupacion('diario')">Diario</button>
+      <button type="button" class="btn {{ 'btn-dark' if agrupacion == 'semanal' else 'btn-outline-dark' }}" onclick="cambiarAgrupacion('semanal')">Semanal</button>
+    </div>
+  </form>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card stat-card h-100"><div class="card-body">
+      <div class="stat-label">Saldo inicial</div>
+      <div class="stat-value" style="font-size:1.3rem;">$ {{ "{:,.2f}".format(saldo_inicial).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card border-success h-100"><div class="card-body">
+      <div class="stat-label">Ingresos del periodo</div>
+      <div class="stat-value text-success" style="font-size:1.3rem;">$ {{ "{:,.2f}".format(total_ingresos).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card border-danger h-100"><div class="card-body">
+      <div class="stat-label">Gastos del periodo</div>
+      <div class="stat-value text-danger" style="font-size:1.3rem;">$ {{ "{:,.2f}".format(total_gastos).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card {{ 'border-danger' if proyeccion else '' }} h-100"><div class="card-body">
+      <div class="stat-label">{{ 'Proyeccion a 30 dias' if proyeccion else 'Saldo actual' }}</div>
+      {% if proyeccion %}
+      <div class="stat-value" style="font-size:1.3rem;">$ {{ "{:,.2f}".format(proyeccion.saldo_30d).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      {% else %}
+      <div class="stat-value" style="font-size:1.3rem;">$ {{ "{:,.2f}".format(saldo_actual).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+      <h6 class="card-title mb-0">Saldo acumulado{{ ' — real y proyectado' if proyeccion else '' }}</h6>
+      {% if proyeccion %}
+      <div class="d-flex gap-3 small text-muted">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#1f3864;border-radius:2px;margin-right:4px;"></span>Real</span>
+        <span><span style="display:inline-block;width:10px;height:2px;background:#d9a441;margin-right:4px;vertical-align:middle;"></span>Proyectado</span>
+      </div>
+      {% endif %}
+    </div>
+    <div style="position:relative; height:220px;">
+      <canvas id="chartSaldo"></canvas>
+    </div>
+    {% if proyeccion %}
+    <p class="small text-muted mt-2 mb-0">Proyeccion basada en el promedio diario de ingresos y gastos de los ultimos 30 dias (promedio: $ {{ "{:,.2f}".format(proyeccion.avg_diario).replace(",", "X").replace(".", ",").replace("X", ".") }}/dia).</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>{{ 'Semana' if agrupacion == 'semanal' else 'Fecha' }}</th>
+            <th class="text-end">Ingresos</th>
+            <th class="text-end">Gastos</th>
+            <th class="text-end">Neto</th>
+            <th class="text-end">Saldo acumulado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+          <tr>
+            <td class="text-nowrap">{{ f.etiqueta }}</td>
+            <td class="text-end text-success">$ {{ "{:,.2f}".format(f.ingresos).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="text-end text-danger">$ {{ "{:,.2f}".format(f.gastos).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="text-end {{ 'text-success' if f.neto >= 0 else 'text-danger' }}">$ {{ "{:,.2f}".format(f.neto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="text-end fw-semibold">$ {{ "{:,.2f}".format(f.saldo).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted">Sin datos para este mes.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+  function cambiarAgrupacion(valor) {
+    document.getElementById('agrupacionInput').value = valor;
+    document.getElementById('agrupacionInput').form.submit();
+  }
+
+  const labelsReal = {{ chart_labels|tojson }};
+  const saldosReal = {{ chart_saldos|tojson }};
+  {% if proyeccion %}
+  const labelsProy = {{ proyeccion.labels|tojson }};
+  const saldosProy = {{ proyeccion.saldos|tojson }};
+  const labels = labelsReal.concat(labelsProy);
+  const datasetReal = saldosReal.concat(new Array(labelsProy.length).fill(null));
+  const datasetProy = new Array(Math.max(labelsReal.length - 1, 0)).fill(null)
+    .concat([saldosReal[saldosReal.length - 1]])
+    .concat(saldosProy);
+  {% else %}
+  const labels = labelsReal;
+  const datasetReal = saldosReal;
+  {% endif %}
+
+  const datasets = [{
+    label: 'Real',
+    data: datasetReal,
+    borderColor: '#1f3864',
+    backgroundColor: 'rgba(31,56,100,0.08)',
+    fill: true,
+    tension: 0.3,
+    pointRadius: 2,
+    pointBackgroundColor: '#1f3864',
+    spanGaps: false,
+  }];
+  {% if proyeccion %}
+  datasets.push({
+    label: 'Proyectado',
+    data: datasetProy,
+    borderColor: '#d9a441',
+    borderDash: [6, 4],
+    backgroundColor: 'transparent',
+    fill: false,
+    tension: 0.3,
+    pointRadius: 2,
+    pointBackgroundColor: '#d9a441',
+    spanGaps: false,
+  });
+  {% endif %}
+
+  const ctx = document.getElementById('chartSaldo');
+  new Chart(ctx, {
+    type: 'line',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { callback: v => '$' + v.toLocaleString('es-AR') } }
+      }
+    }
+  });
+</script>
+{% endblock %}
