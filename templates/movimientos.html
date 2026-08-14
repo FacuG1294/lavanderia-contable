@@ -7,7 +7,7 @@
     <div class="card shadow-sm">
       <div class="card-body">
         <h5 class="card-title">Nuevo {{ 'ingreso' if tipo == 'ingreso' else 'gasto' }}</h5>
-        <form method="post">
+        <form method="post" {% if tipo == 'gasto' %}id="gastoForm" onsubmit="return comprobanteListo()"{% endif %}>
           <div class="mb-2">
             <label class="form-label">Fecha</label>
             <input type="date" name="fecha" class="form-control" value="{{ hoy }}" required>
@@ -83,6 +83,18 @@
           </div>
           {% endif %}
 
+          {% if tipo == 'gasto' %}
+          <div class="mb-2">
+            <label class="form-label">Comprobante <span class="text-muted small">(opcional)</span></label>
+            <input type="file" accept="image/*" capture="environment" class="form-control" id="comprobanteInput" onchange="previsualizarComprobante()">
+            <input type="hidden" name="comprobante_data" id="comprobanteData">
+            <div id="comprobantePreviewWrap" class="mt-2" style="display:none;">
+              <img id="comprobantePreview" style="max-height:90px; border-radius:6px; border:1px solid #d8dee6;">
+              <span id="comprobanteInfo" class="small text-muted ms-2"></span>
+            </div>
+          </div>
+          {% endif %}
+
           <div class="mb-2">
             <label class="form-label">{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }} (opcional)</label>
             <input type="text" name="contraparte" class="form-control" {% if tipo == 'ingreso' and nombres_clientes %}list="clientesDatalist"{% endif %}>
@@ -148,7 +160,7 @@
             <tr>
               <th class="text-nowrap">Fecha</th><th>Categoria</th><th>Medio</th><th>{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }}</th>
               {% if tipo == 'ingreso' %}<th>Facturado</th>{% endif %}
-              {% if tipo == 'gasto' %}<th>Cuotas</th>{% endif %}
+              {% if tipo == 'gasto' %}<th>Cuotas</th><th class="text-center">Comprobante</th>{% endif %}
               <th>Nota</th><th class="text-end text-nowrap">Monto</th><th></th>
             </tr>
           </thead>
@@ -179,6 +191,13 @@
                   -
                 {% endif %}
               </td>
+              <td class="text-center">
+                {% if f.comprobante_data %}
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" data-bs-toggle="modal" data-bs-target="#modalComprobante" data-src="{{ url_for('ver_comprobante', mov_id=f.id) }}">🧾 Ver</button>
+                {% else %}
+                <span class="text-muted">-</span>
+                {% endif %}
+              </td>
               {% endif %}
               <td>{{ f.nota or "-" }}</td>
               <td class="text-end text-nowrap">$ {{ "{:,.2f}".format(f.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
@@ -198,6 +217,22 @@
     </div>
   </div>
 </div>
+
+{% if tipo == 'gasto' %}
+<div class="modal fade" id="modalComprobante" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Comprobante</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center">
+        <img id="comprobanteModalImg" src="" style="max-width:100%; border-radius:8px;">
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% endblock %}
 
@@ -232,9 +267,70 @@
     if (!sel || !monto || !sel.value) return;
     monto.value = sel.value;
   }
+
+  var comprobanteProcesando = false;
+
+  function comprobanteListo() {
+    if (!comprobanteProcesando) return true;
+    var intentos = 0;
+    var check = setInterval(function () {
+      intentos++;
+      if (!comprobanteProcesando || intentos > 50) {
+        clearInterval(check);
+        document.getElementById('gastoForm').submit();
+      }
+    }, 100);
+    return false;
+  }
+
+  function previsualizarComprobante() {
+    var input = document.getElementById('comprobanteInput');
+    var hidden = document.getElementById('comprobanteData');
+    var wrap = document.getElementById('comprobantePreviewWrap');
+    var img = document.getElementById('comprobantePreview');
+    var info = document.getElementById('comprobanteInfo');
+    if (!input || !input.files || !input.files[0]) return;
+
+    comprobanteProcesando = true;
+    var file = input.files[0];
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var imagen = new Image();
+      imagen.onload = function () {
+        var maxLado = 1000;
+        var w = imagen.width, h = imagen.height;
+        if (w > maxLado || h > maxLado) {
+          if (w > h) { h = Math.round(h * maxLado / w); w = maxLado; }
+          else { w = Math.round(w * maxLado / h); h = maxLado; }
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(imagen, 0, 0, w, h);
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        hidden.value = dataUrl;
+        img.src = dataUrl;
+        wrap.style.display = 'block';
+        var kb = Math.round(dataUrl.length * 0.75 / 1024);
+        info.textContent = 'Comprobante listo (~' + kb + ' KB)';
+        comprobanteProcesando = false;
+      };
+      imagen.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     toggleNumFactura();
     toggleCuotas();
+    var modal = document.getElementById('modalComprobante');
+    if (modal) {
+      modal.addEventListener('show.bs.modal', function (event) {
+        var btn = event.relatedTarget;
+        var src = btn.getAttribute('data-src');
+        document.getElementById('comprobanteModalImg').src = src;
+      });
+    }
   });
 </script>
 {% endblock %}
