@@ -52,23 +52,27 @@
 <div class="card shadow-sm mb-4">
   <div class="card-body">
     <h6 class="card-title">Comprobantes de ARCA sin un ingreso cargado en el sistema</h6>
-    <p class="small text-muted">Puede ser que ese ingreso todavia no se haya cargado en "Ingresos", o que se haya cargado con otra fecha/monto.</p>
-    <div class="table-responsive">
-      <table class="table table-sm table-hover">
-        <thead><tr><th>Fecha</th><th>Tipo</th><th>N°</th><th>Cliente</th><th class="text-end">Importe</th></tr></thead>
-        <tbody>
-          {% for c in comprobantes_sin_ingreso %}
-          <tr>
-            <td>{{ c.fecha }}</td>
-            <td>{{ c.tipo }}</td>
-            <td>{{ formatear_numero(c.punto_venta, c.numero_desde) }}</td>
-            <td>{{ c.receptor_nombre or "Consumidor Final" }}</td>
-            <td class="text-end">$ {{ "{:,.2f}".format(c.importe_total or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-          </tr>
+    <p class="small text-muted">El cruce automatico es por numero de factura. Si no coincide con ningun ingreso cargado, elegilo a mano o carga el ingreso directo.</p>
+    {% for c in comprobantes_sin_ingreso %}
+    <div class="d-flex align-items-center gap-2 flex-wrap py-2 {{ 'border-top' if not loop.first }}">
+      <div class="flex-grow-1" style="min-width:200px;">
+        <div class="fw-semibold small">{{ c.fecha }} &middot; {{ formatear_numero(c.punto_venta, c.numero_desde) }}</div>
+        <div class="small text-muted">{{ c.receptor_nombre or "Consumidor Final" }} &middot; $ {{ "{:,.2f}".format(c.importe_total or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+      </div>
+      <form method="post" action="{{ url_for('facturacion_vincular') }}" class="d-flex gap-2">
+        <input type="hidden" name="comprobante_id" value="{{ c.id }}">
+        <select name="ingreso_id" class="form-select form-select-sm" style="max-width:260px;" required>
+          <option value="">Vincular a ingreso...</option>
+          {% for ing in ingresos_vinculables %}
+          <option value="{{ ing.id }}">{{ ing.fecha }} · {{ ing.categoria }} · $ {{ "{:,.0f}".format(ing.monto).replace(",", ".") }}{{ " · " + ing.contraparte if ing.contraparte }}</option>
           {% endfor %}
-        </tbody>
-      </table>
+        </select>
+        <button type="submit" class="btn btn-sm btn-dark text-nowrap">Vincular</button>
+      </form>
+      <a href="{{ url_for('ingresos', prefill_fecha=c.fecha, prefill_monto='%.2f'|format(c.importe_total or 0), prefill_contraparte=c.receptor_nombre or '', prefill_numero_factura=formatear_numero(c.punto_venta, c.numero_desde)) }}"
+         class="small text-nowrap">+ Crear ingreso</a>
     </div>
+    {% endfor %}
   </div>
 </div>
 {% endif %}
@@ -77,23 +81,29 @@
 <div class="card shadow-sm mb-4">
   <div class="card-body">
     <h6 class="card-title">Ingresos marcados como facturados sin comprobante encontrado</h6>
-    <p class="small text-muted">Revisa el numero de factura cargado, o importa un excel de ARCA mas actualizado.</p>
-    <div class="table-responsive">
-      <table class="table table-sm table-hover">
-        <thead><tr><th>Fecha</th><th>Categoria</th><th>N° cargado</th><th>Cliente</th><th class="text-end">Monto</th></tr></thead>
-        <tbody>
-          {% for i in ingresos_sin_comprobante %}
-          <tr>
-            <td>{{ i.fecha }}</td>
-            <td>{{ i.categoria }}</td>
-            <td>{{ i.numero_factura or "-" }}</td>
-            <td>{{ i.contraparte or "-" }}</td>
-            <td class="text-end">$ {{ "{:,.2f}".format(i.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-          </tr>
+    <p class="small text-muted">Vinculalos a mano a un comprobante ya importado, o revisa el numero de factura cargado.</p>
+    {% for i in ingresos_sin_comprobante %}
+    <div class="d-flex align-items-center gap-2 flex-wrap py-2 {{ 'border-top' if not loop.first }}">
+      <div class="flex-grow-1" style="min-width:200px;">
+        <div class="fw-semibold small">{{ i.fecha }} &middot; {{ i.categoria }}</div>
+        <div class="small text-muted">{{ i.contraparte or "-" }} &middot; $ {{ "{:,.2f}".format(i.monto).replace(",", "X").replace(".", ",").replace("X", ".") }} &middot; N° cargado: {{ i.numero_factura or "-" }}</div>
+      </div>
+      {% if comprobantes_sin_ingreso %}
+      <form method="post" action="{{ url_for('facturacion_vincular') }}" class="d-flex gap-2">
+        <input type="hidden" name="ingreso_id" value="{{ i.id }}">
+        <select name="comprobante_id" class="form-select form-select-sm" style="max-width:260px;" required>
+          <option value="">Vincular a comprobante...</option>
+          {% for c in comprobantes_sin_ingreso %}
+          <option value="{{ c.id }}">{{ c.fecha }} · {{ formatear_numero(c.punto_venta, c.numero_desde) }} · $ {{ "{:,.0f}".format(c.importe_total or 0).replace(",", ".") }}</option>
           {% endfor %}
-        </tbody>
-      </table>
+        </select>
+        <button type="submit" class="btn btn-sm btn-dark text-nowrap">Vincular</button>
+      </form>
+      {% else %}
+      <span class="small text-muted">No hay comprobantes sin vincular para elegir.</span>
+      {% endif %}
     </div>
+    {% endfor %}
   </div>
 </div>
 {% endif %}
@@ -104,7 +114,7 @@
     <div class="table-responsive">
       <table class="table table-sm table-hover align-middle">
         <thead>
-          <tr><th>Fecha</th><th>Tipo</th><th>N°</th><th>Cliente</th><th class="text-end">Importe</th><th>Estado</th></tr>
+          <tr><th>Fecha</th><th>Tipo</th><th>N°</th><th>Cliente</th><th class="text-end">Importe</th><th>Estado</th><th></th></tr>
         </thead>
         <tbody>
           {% for c in comprobantes %}
@@ -121,9 +131,17 @@
                 <span class="badge bg-warning text-dark">Sin vincular</span>
               {% endif %}
             </td>
+            <td>
+              {% if c.conciliado %}
+              <form method="post" action="{{ url_for('facturacion_desvincular') }}" onsubmit="return confirm('¿Desvincular este comprobante del ingreso?');">
+                <input type="hidden" name="comprobante_id" value="{{ c.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Desvincular</button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
           {% else %}
-          <tr><td colspan="6" class="text-center text-muted">Todavia no importaste ningun comprobante.</td></tr>
+          <tr><td colspan="7" class="text-center text-muted">Todavia no importaste ningun comprobante.</td></tr>
           {% endfor %}
         </tbody>
       </table>
