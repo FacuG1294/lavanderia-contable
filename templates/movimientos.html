@@ -10,7 +10,7 @@
         <form method="post" {% if tipo == 'gasto' %}id="gastoForm" onsubmit="return comprobanteListo()"{% endif %}>
           <div class="mb-2">
             <label class="form-label">Fecha</label>
-            <input type="date" name="fecha" class="form-control" value="{{ hoy }}" required>
+            <input type="date" name="fecha" class="form-control" value="{{ prefill.fecha if prefill and prefill.fecha else hoy }}" required>
           </div>
           <div class="mb-2">
             <label class="form-label">Categoria</label>
@@ -38,7 +38,7 @@
           {% endif %}
           <div class="mb-2">
             <label class="form-label">Monto ($)</label>
-            <input type="text" name="monto" id="montoInput" class="form-control" placeholder="0.00" required>
+            <input type="text" name="monto" id="montoInput" class="form-control" placeholder="0.00" value="{{ prefill.monto if prefill else '' }}" required>
           </div>
           <div class="mb-2">
             <label class="form-label">Medio de pago</label>
@@ -53,13 +53,13 @@
           <div class="mb-2">
             <label class="form-label">¿Se facturó?</label>
             <select name="facturado" class="form-select" id="facturadoSelect" onchange="toggleNumFactura()">
-              <option value="0">No</option>
-              <option value="1">Si</option>
+              <option value="0" {{ '' if prefill else 'selected' }}>No</option>
+              <option value="1" {{ 'selected' if prefill else '' }}>Si</option>
             </select>
           </div>
-          <div class="mb-2" id="numFacturaWrap" style="display:none;">
+          <div class="mb-2" id="numFacturaWrap" style="display:{{ 'block' if prefill else 'none' }};">
             <label class="form-label">N° de factura</label>
-            <input type="text" name="numero_factura" class="form-control" placeholder="0001-00000123">
+            <input type="text" name="numero_factura" class="form-control" placeholder="0001-00000123" value="{{ prefill.numero_factura if prefill else '' }}">
           </div>
           {% endif %}
 
@@ -98,7 +98,7 @@
 
           <div class="mb-2">
             <label class="form-label">{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }} (opcional)</label>
-            <input type="text" name="contraparte" class="form-control" {% if tipo == 'ingreso' and nombres_clientes %}list="clientesDatalist"{% elif tipo == 'gasto' and nombres_proveedores %}list="proveedoresDatalist"{% endif %}>
+            <input type="text" name="contraparte" class="form-control" value="{{ prefill.contraparte if prefill else '' }}" {% if tipo == 'ingreso' and nombres_clientes %}list="clientesDatalist"{% elif tipo == 'gasto' and nombres_proveedores %}list="proveedoresDatalist"{% endif %}>
             {% if tipo == 'ingreso' and nombres_clientes %}
             <datalist id="clientesDatalist">
               {% for n in nombres_clientes %}
