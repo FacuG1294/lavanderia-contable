@@ -87,6 +87,37 @@
   </div>
 </div>
 
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-title">Servicios mas vendidos &mdash; {{ mes_nombre }}</h6>
+        {% if top_servicios_labels %}
+        <div style="position:relative; height:220px;">
+          <canvas id="chartServicios"></canvas>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">Todavia no hay ingresos con servicio elegido este mes.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-title">Gastos por categoria &mdash; {{ mes_nombre }}</h6>
+        {% if gastos_cat_labels %}
+        <div style="position:relative; height:220px;">
+          <canvas id="chartGastosCat"></canvas>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">Todavia no hay gastos cargados este mes.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card shadow-sm">
   <div class="card-body">
     <h6 class="card-title">Ultimos movimientos</h6>
@@ -129,5 +160,42 @@
     },
     options: { responsive: true, scales: { y: { beginAtZero: true } } }
   });
+
+  {% if top_servicios_labels %}
+  const ctxServicios = document.getElementById('chartServicios');
+  new Chart(ctxServicios, {
+    type: 'bar',
+    data: {
+      labels: {{ top_servicios_labels|tojson }},
+      datasets: [{ label: 'Cantidad', data: {{ top_servicios_cant|tojson }}, backgroundColor: '#1f3864' }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+  {% endif %}
+
+  {% if gastos_cat_labels %}
+  const ctxGastosCat = document.getElementById('chartGastosCat');
+  new Chart(ctxGastosCat, {
+    type: 'doughnut',
+    data: {
+      labels: {{ gastos_cat_labels|tojson }},
+      datasets: [{
+        data: {{ gastos_cat_totales|tojson }},
+        backgroundColor: ['#1f3864', '#d9a441', '#dc3545', '#198754', '#6c757d', '#0dcaf0']
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
+    }
+  });
+  {% endif %}
 </script>
 {% endblock %}
