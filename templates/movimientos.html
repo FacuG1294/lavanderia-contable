@@ -98,10 +98,16 @@
 
           <div class="mb-2">
             <label class="form-label">{{ 'Cliente' if tipo == 'ingreso' else 'Proveedor' }} (opcional)</label>
-            <input type="text" name="contraparte" class="form-control" {% if tipo == 'ingreso' and nombres_clientes %}list="clientesDatalist"{% endif %}>
+            <input type="text" name="contraparte" class="form-control" {% if tipo == 'ingreso' and nombres_clientes %}list="clientesDatalist"{% elif tipo == 'gasto' and nombres_proveedores %}list="proveedoresDatalist"{% endif %}>
             {% if tipo == 'ingreso' and nombres_clientes %}
             <datalist id="clientesDatalist">
               {% for n in nombres_clientes %}
+              <option value="{{ n }}">
+              {% endfor %}
+            </datalist>
+            {% elif tipo == 'gasto' and nombres_proveedores %}
+            <datalist id="proveedoresDatalist">
+              {% for n in nombres_proveedores %}
               <option value="{{ n }}">
               {% endfor %}
             </datalist>
