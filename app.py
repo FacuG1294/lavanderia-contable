@@ -465,6 +465,39 @@ def dashboard():
     )
 
 
+def _query_movimientos(db, tipo, args):
+    conditions = ["tipo = ?"]
+    params = [tipo]
+
+    desde = (args.get("desde") or "").strip()
+    hasta = (args.get("hasta") or "").strip()
+    categoria = (args.get("categoria") or "").strip()
+    contraparte = (args.get("contraparte") or "").strip()
+
+    if desde:
+        conditions.append("fecha >= ?")
+        params.append(desde)
+    if hasta:
+        conditions.append("fecha <= ?")
+        params.append(hasta)
+    if categoria:
+        conditions.append("categoria = ?")
+        params.append(categoria)
+    if contraparte:
+        conditions.append("LOWER(contraparte) LIKE ?")
+        params.append(f"%{contraparte.lower()}%")
+
+    where = " AND ".join(conditions)
+    filas = db.execute(
+        f"SELECT * FROM transactions WHERE {where} ORDER BY fecha DESC, id DESC LIMIT 300",
+        tuple(params),
+    ).fetchall()
+
+    filtros = {"desde": desde, "hasta": hasta, "categoria": categoria, "contraparte": contraparte}
+    hay_filtro = any(filtros.values())
+    return filas, filtros, hay_filtro
+
+
 def _servicios_agrupados():
     db = get_db()
     filas = db.execute(
@@ -511,9 +544,7 @@ def ingresos():
         flash("Ingreso registrado", "success")
         return redirect(url_for("ingresos"))
 
-    filas = db.execute(
-        "SELECT * FROM transactions WHERE tipo='ingreso' ORDER BY fecha DESC, id DESC LIMIT 100"
-    ).fetchall()
+    filas, filtros, hay_filtro = _query_movimientos(db, "ingreso", request.args)
     orden_secciones, servicios_grupos = _servicios_agrupados()
     nombres_clientes = [
         row["nombre"] for row in db.execute("SELECT nombre FROM clientes ORDER BY nombre").fetchall()
@@ -529,6 +560,8 @@ def ingresos():
         orden_secciones=orden_secciones,
         servicios_grupos=servicios_grupos,
         nombres_clientes=nombres_clientes,
+        filtros=filtros,
+        hay_filtro=hay_filtro,
     )
 
 
@@ -596,9 +629,7 @@ def gastos():
         flash("Gasto registrado", "success")
         return redirect(url_for("gastos"))
 
-    filas = db.execute(
-        "SELECT * FROM transactions WHERE tipo='gasto' ORDER BY fecha DESC, id DESC LIMIT 100"
-    ).fetchall()
+    filas, filtros, hay_filtro = _query_movimientos(db, "gasto", request.args)
     return render_template(
         "movimientos.html",
         tipo="gasto",
@@ -607,6 +638,8 @@ def gastos():
         medios_pago=MEDIOS_PAGO,
         filas=filas,
         hoy=date.today().isoformat(),
+        filtros=filtros,
+        hay_filtro=hay_filtro,
     )
 
 
