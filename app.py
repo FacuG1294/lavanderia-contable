@@ -420,6 +420,103 @@ def _monotributo_recordatorio(db):
     return None
 
 
+def _flujo_caja_datos(db, year, month, agrupacion):
+    start, end = month_bounds(year, month)
+
+    saldo_inicial = db.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) AS s "
+        "FROM transactions WHERE fecha < ?",
+        (start,),
+    ).fetchone()["s"]
+
+    movs = db.execute(
+        "SELECT fecha, tipo, monto FROM transactions WHERE fecha >= ? AND fecha < ? ORDER BY fecha",
+        (start, end),
+    ).fetchall()
+
+    por_fecha = {}
+    for m in movs:
+        d = por_fecha.setdefault(m["fecha"], {"ingresos": 0.0, "gastos": 0.0})
+        if m["tipo"] == "ingreso":
+            d["ingresos"] += m["monto"]
+        else:
+            d["gastos"] += m["monto"]
+
+    ultimo_dia = (date.fromisoformat(end) - timedelta(days=1)).day
+    fechas_mes = [date(year, month, d) for d in range(1, ultimo_dia + 1)]
+
+    if agrupacion == "semanal":
+        semanas = {}
+        for f in fechas_mes:
+            idx = (f.day - 1) // 7
+            semanas.setdefault(idx, []).append(f)
+        grupos = list(semanas.values())
+    else:
+        grupos = [[f] for f in fechas_mes]
+
+    filas = []
+    saldo = saldo_inicial
+    for grupo in grupos:
+        ingresos = sum(por_fecha.get(f.isoformat(), {}).get("ingresos", 0.0) for f in grupo)
+        gastos = sum(por_fecha.get(f.isoformat(), {}).get("gastos", 0.0) for f in grupo)
+        neto = ingresos - gastos
+        saldo += neto
+        if len(grupo) == 1:
+            etiqueta = f"{grupo[0].day:02d}/{grupo[0].month:02d}"
+        else:
+            etiqueta = f"{grupo[0].day:02d}/{grupo[0].month:02d} - {grupo[-1].day:02d}/{grupo[-1].month:02d}"
+        filas.append({
+            "etiqueta": etiqueta,
+            "ingresos": ingresos,
+            "gastos": gastos,
+            "neto": neto,
+            "saldo": saldo,
+        })
+
+    total_ingresos = sum(f["ingresos"] for f in filas)
+    total_gastos = sum(f["gastos"] for f in filas)
+
+    return {
+        "saldo_inicial": saldo_inicial,
+        "filas": filas,
+        "total_ingresos": total_ingresos,
+        "total_gastos": total_gastos,
+        "saldo_actual": saldo,
+        "chart_labels": [f["etiqueta"] for f in filas],
+        "chart_saldos": [round(f["saldo"], 2) for f in filas],
+    }
+
+
+def _flujo_caja_proyeccion(db, mes_str, saldo_actual):
+    hoy = date.today()
+    if mes_str != hoy.strftime("%Y-%m"):
+        return None
+
+    hace_30 = (hoy - timedelta(days=30)).isoformat()
+    totales = db.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE 0 END),0) AS ing, "
+        "COALESCE(SUM(CASE WHEN tipo='gasto' THEN monto ELSE 0 END),0) AS gas "
+        "FROM transactions WHERE fecha >= ? AND fecha <= ?",
+        (hace_30, hoy.isoformat()),
+    ).fetchone()
+    avg_diario = (totales["ing"] - totales["gas"]) / 30.0
+
+    labels, saldos = [], []
+    s = saldo_actual
+    for i in range(1, 31):
+        f = hoy + timedelta(days=i)
+        s += avg_diario
+        labels.append(f"{f.day:02d}/{f.month:02d}")
+        saldos.append(round(s, 2))
+
+    return {
+        "avg_diario": round(avg_diario, 2),
+        "saldo_30d": round(s, 2),
+        "labels": labels,
+        "saldos": saldos,
+    }
+
+
 # ---------- Rutas ----------
 
 @app.route("/")
@@ -762,6 +859,31 @@ def exportar_csv():
         csv_data,
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename=reporte_{year:04d}-{month:02d}.csv"},
+    )
+
+
+@app.route("/flujo-caja", methods=["GET"])
+@login_required
+def flujo_caja():
+    db = get_db()
+    mes_str = request.args.get("mes", date.today().strftime("%Y-%m"))
+    year, month = parse_month(mes_str)
+    mes_actual = f"{year:04d}-{month:02d}"
+
+    agrupacion = request.args.get("agrupacion", "diario")
+    if agrupacion not in ("diario", "semanal"):
+        agrupacion = "diario"
+
+    datos = _flujo_caja_datos(db, year, month, agrupacion)
+    proyeccion = _flujo_caja_proyeccion(db, mes_actual, datos["saldo_actual"])
+
+    return render_template(
+        "flujo_caja.html",
+        mes_actual=mes_actual,
+        agrupacion=agrupacion,
+        mes_nombre=f"{MESES_LARGO_ES[month]} {year}",
+        proyeccion=proyeccion,
+        **datos,
     )
 
 
