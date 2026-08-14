@@ -28,11 +28,12 @@
               {% for seccion in orden_secciones %}
               <optgroup label="{{ seccion }}">
                 {% for s in servicios_grupos[seccion] %}
-                <option value="{{ '%.2f'|format(s.precio) }}">{{ s.nombre }} (${{ '{:,.0f}'.format(s.precio).replace(',', '.') }})</option>
+                <option value="{{ '%.2f'|format(s.precio) }}" data-nombre="{{ s.nombre }}">{{ s.nombre }} (${{ '{:,.0f}'.format(s.precio).replace(',', '.') }})</option>
                 {% endfor %}
               </optgroup>
               {% endfor %}
             </select>
+            <input type="hidden" name="servicio" id="servicioHidden">
           </div>
           {% endif %}
           <div class="mb-2">
@@ -264,7 +265,13 @@
   function autocompletarMonto() {
     var sel = document.getElementById('servicioSelect');
     var monto = document.getElementById('montoInput');
-    if (!sel || !monto || !sel.value) return;
+    var hidden = document.getElementById('servicioHidden');
+    if (!sel) return;
+    var opt = sel.options[sel.selectedIndex];
+    if (hidden) {
+      hidden.value = (sel.value && opt) ? (opt.getAttribute('data-nombre') || '') : '';
+    }
+    if (!monto || !sel.value) return;
     monto.value = sel.value;
   }
 
