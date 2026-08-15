@@ -9,6 +9,10 @@ import openpyxl
 from flask import (
     Flask, render_template, request, redirect, url_for, session, flash, Response, g
 )
+from reportlab.lib.pagesizes import A5
+from reportlab.lib.units import mm
+from reportlab.lib import colors
+from reportlab.pdfgen import canvas as pdfcanvas
 
 from monotributo_data import (
     CATEGORIAS_MONOTRIBUTO, categoria_por_facturacion, get_categoria, VIGENCIA, periodo_legible
@@ -212,6 +216,21 @@ def init_db():
                 creado_en TEXT NOT NULL
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS recibos (
+                id SERIAL PRIMARY KEY,
+                numero INTEGER NOT NULL,
+                fecha TEXT NOT NULL,
+                cliente_nombre TEXT NOT NULL,
+                cliente_telefono TEXT,
+                detalle TEXT NOT NULL,
+                fecha_entrega TEXT,
+                monto REAL,
+                estado_pago TEXT NOT NULL DEFAULT 'Paga al retirar',
+                nota TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
@@ -290,6 +309,21 @@ def init_db():
                 telefono TEXT,
                 cuit TEXT,
                 notas TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS recibos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                numero INTEGER NOT NULL,
+                fecha TEXT NOT NULL,
+                cliente_nombre TEXT NOT NULL,
+                cliente_telefono TEXT,
+                detalle TEXT NOT NULL,
+                fecha_entrega TEXT,
+                monto REAL,
+                estado_pago TEXT NOT NULL DEFAULT 'Paga al retirar',
+                nota TEXT,
                 creado_en TEXT NOT NULL
             )
         """)
@@ -1319,6 +1353,192 @@ def proveedores_eliminar(proveedor_id):
     db.commit()
     flash("Proveedor eliminado", "success")
     return redirect(url_for("proveedores"))
+
+
+# ---------- Recibos de ropa recibida ----------
+
+ESTADOS_PAGO_RECIBO = ["Paga al retirar", "Pagado", "Seña pagada"]
+
+
+def _wrap_texto(c, texto, max_width, font="Helvetica", size=10):
+    """Parte un texto en lineas que entran en max_width, respetando saltos de linea manuales."""
+    lineas = []
+    for parrafo in (texto or "").split("\n"):
+        palabras = parrafo.split()
+        if not palabras:
+            lineas.append("")
+            continue
+        actual = palabras[0]
+        for palabra in palabras[1:]:
+            prueba = actual + " " + palabra
+            if c.stringWidth(prueba, font, size) <= max_width:
+                actual = prueba
+            else:
+                lineas.append(actual)
+                actual = palabra
+        lineas.append(actual)
+    return lineas
+
+
+def _generar_pdf_recibo(recibo, nombre_negocio):
+    buf = io.BytesIO()
+    ancho, alto = A5
+    c = pdfcanvas.Canvas(buf, pagesize=A5)
+    margen = 14 * mm
+    x0 = margen
+    x1 = ancho - margen
+    y = alto - margen
+
+    c.setFillColor(colors.HexColor("#1f3864"))
+    c.rect(0, alto - 26 * mm, ancho, 26 * mm, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(x0, alto - 12 * mm, nombre_negocio or "Lavanderia")
+    c.setFont("Helvetica", 10)
+    c.drawString(x0, alto - 19 * mm, "Recibo de ropa recibida")
+    c.setFont("Helvetica-Bold", 12)
+    c.drawRightString(x1, alto - 12 * mm, f"N.o {recibo['numero']:04d}")
+    c.setFont("Helvetica", 10)
+    c.drawRightString(x1, alto - 19 * mm, recibo["fecha"])
+
+    y = alto - 34 * mm
+    c.setFillColor(colors.HexColor("#14264a"))
+
+    def campo(etiqueta, valor, y):
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(x0, y, etiqueta)
+        c.setFont("Helvetica", 10)
+        c.drawString(x0 + 32 * mm, y, valor or "-")
+        return y - 6.5 * mm
+
+    y = campo("Cliente:", recibo["cliente_nombre"], y)
+    if recibo["cliente_telefono"]:
+        y = campo("Telefono:", recibo["cliente_telefono"], y)
+    if recibo["fecha_entrega"]:
+        y = campo("Retira el:", recibo["fecha_entrega"], y)
+
+    y -= 3 * mm
+    c.setStrokeColor(colors.HexColor("#d8dee6"))
+    c.line(x0, y, x1, y)
+    y -= 7 * mm
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(x0, y, "Detalle de lo recibido")
+    y -= 6 * mm
+    c.setFont("Helvetica", 10)
+    for linea in _wrap_texto(c, recibo["detalle"], x1 - x0, "Helvetica", 10):
+        c.drawString(x0, y, linea)
+        y -= 5.5 * mm
+
+    y -= 3 * mm
+    c.setStrokeColor(colors.HexColor("#d8dee6"))
+    c.line(x0, y, x1, y)
+    y -= 8 * mm
+
+    c.setFont("Helvetica-Bold", 11)
+    if recibo["monto"] is not None:
+        monto_txt = "$ " + "{:,.2f}".format(recibo["monto"]).replace(",", "X").replace(".", ",").replace("X", ".")
+        c.drawString(x0, y, f"{recibo['estado_pago']}: {monto_txt}")
+    else:
+        c.drawString(x0, y, recibo["estado_pago"])
+    y -= 8 * mm
+
+    if recibo["nota"]:
+        c.setFont("Helvetica-Oblique", 9)
+        c.setFillColor(colors.HexColor("#5f5e5a"))
+        for linea in _wrap_texto(c, recibo["nota"], x1 - x0, "Helvetica-Oblique", 9):
+            c.drawString(x0, y, linea)
+            y -= 5 * mm
+
+    c.setFont("Helvetica", 8)
+    c.setFillColor(colors.HexColor("#888780"))
+    c.drawCentredString(ancho / 2, margen / 2 + 4, "Conserva este recibo para retirar tu ropa")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf
+
+
+@app.route("/recibos", methods=["GET", "POST"])
+@login_required
+def recibos():
+    db = get_db()
+    if request.method == "POST":
+        cliente_nombre = (request.form.get("cliente_nombre") or "").strip()
+        detalle = (request.form.get("detalle") or "").strip()
+        if not cliente_nombre or not detalle:
+            flash("Falta el nombre del cliente o el detalle de la ropa", "error")
+            return redirect(url_for("recibos"))
+
+        monto_raw = (request.form.get("monto") or "").strip()
+        monto = None
+        if monto_raw:
+            try:
+                monto = float(monto_raw.replace(",", "."))
+            except ValueError:
+                monto = None
+
+        ultimo = db.execute("SELECT COALESCE(MAX(numero),0) AS m FROM recibos").fetchone()["m"]
+
+        db.execute(
+            "INSERT INTO recibos "
+            "(numero, fecha, cliente_nombre, cliente_telefono, detalle, fecha_entrega, monto, estado_pago, nota, creado_en) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                ultimo + 1,
+                request.form.get("fecha") or date.today().isoformat(),
+                cliente_nombre,
+                (request.form.get("cliente_telefono") or "").strip(),
+                detalle,
+                (request.form.get("fecha_entrega") or "").strip(),
+                monto,
+                request.form.get("estado_pago") or "Paga al retirar",
+                (request.form.get("nota") or "").strip(),
+                datetime.now().isoformat(),
+            ),
+        )
+        db.commit()
+        flash("Recibo generado", "success")
+        return redirect(url_for("recibos"))
+
+    filas = db.execute("SELECT * FROM recibos ORDER BY id DESC LIMIT 100").fetchall()
+    nombres_clientes = [
+        row["nombre"] for row in db.execute("SELECT nombre FROM clientes ORDER BY nombre").fetchall()
+    ]
+    return render_template(
+        "recibos.html",
+        recibos=filas,
+        estados_pago=ESTADOS_PAGO_RECIBO,
+        nombres_clientes=nombres_clientes,
+        hoy=date.today().isoformat(),
+    )
+
+
+@app.route("/recibos/<int:recibo_id>/pdf")
+@login_required
+def recibo_pdf(recibo_id):
+    db = get_db()
+    recibo = db.execute("SELECT * FROM recibos WHERE id = ?", (recibo_id,)).fetchone()
+    if not recibo:
+        return "Recibo no encontrado", 404
+    nombre_negocio = get_setting("nombre_negocio", "Lavandería Tifón")
+    buf = _generar_pdf_recibo(recibo, nombre_negocio)
+    return Response(
+        buf.read(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=recibo-{recibo['numero']:04d}.pdf"},
+    )
+
+
+@app.route("/recibos/<int:recibo_id>/eliminar", methods=["POST"])
+@login_required
+def recibo_eliminar(recibo_id):
+    db = get_db()
+    db.execute("DELETE FROM recibos WHERE id = ?", (recibo_id,))
+    db.commit()
+    flash("Recibo eliminado", "success")
+    return redirect(url_for("recibos"))
 
 
 # ---------- Monotributo: cuenta corriente ----------
