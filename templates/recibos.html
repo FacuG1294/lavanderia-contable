@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block titulo %}Recibos{% endblock %}
+{% block contenido %}
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Nuevo recibo</h5>
+        <p class="small text-muted">Cargá lo que recibiste y descargá el PDF para mandarlo por WhatsApp.</p>
+        <form method="post">
+          <div class="mb-2">
+            <label class="form-label">Fecha</label>
+            <input type="date" name="fecha" class="form-control" value="{{ hoy }}" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Cliente</label>
+            <input type="text" name="cliente_nombre" class="form-control" placeholder="Nombre y apellido" {% if nombres_clientes %}list="clientesDatalist"{% endif %} required>
+            {% if nombres_clientes %}
+            <datalist id="clientesDatalist">
+              {% for n in nombres_clientes %}
+              <option value="{{ n }}">
+              {% endfor %}
+            </datalist>
+            {% endif %}
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Telefono <span class="text-muted small">(opcional)</span></label>
+            <input type="text" name="cliente_telefono" class="form-control" placeholder="381 555-0000">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Detalle de lo recibido</label>
+            <textarea name="detalle" class="form-control" rows="4" placeholder="3 camperas, 1 acolchado 2 plazas..." required></textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Retira el <span class="text-muted small">(opcional)</span></label>
+            <input type="text" name="fecha_entrega" class="form-control" placeholder="Viernes 15/08 por la tarde">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Estado de pago</label>
+            <select name="estado_pago" class="form-select">
+              {% for e in estados_pago %}
+              <option value="{{ e }}">{{ e }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Monto ($) <span class="text-muted small">(opcional)</span></label>
+            <input type="text" name="monto" class="form-control" placeholder="0.00">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nota <span class="text-muted small">(opcional)</span></label>
+            <input type="text" name="nota" class="form-control" placeholder="Mancha en el puño, ojo con eso...">
+          </div>
+          <button type="submit" class="btn btn-dark w-100">Generar recibo</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Ultimos recibos</h5>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle">
+            <thead>
+              <tr><th>N.o</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for r in recibos %}
+              <tr>
+                <td>{{ "%04d"|format(r.numero) }}</td>
+                <td class="text-nowrap">{{ r.fecha }}</td>
+                <td>{{ r.cliente_nombre }}</td>
+                <td class="small" style="max-width:220px;">{{ r.detalle }}</td>
+                <td class="small">{{ r.estado_pago }}</td>
+                <td class="text-nowrap">
+                  <a href="{{ url_for('recibo_pdf', recibo_id=r.id) }}" class="btn btn-sm btn-outline-dark">Descargar PDF</a>
+                  <form method="post" action="{{ url_for('recibo_eliminar', recibo_id=r.id) }}" class="d-inline"
+                        onsubmit="return confirm('¿Eliminar este recibo?');">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">✕</button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center text-muted">Todavia no generaste ningun recibo.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
