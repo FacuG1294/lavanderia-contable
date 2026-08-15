@@ -37,16 +37,29 @@
             <input type="text" name="fecha_entrega" class="form-control" placeholder="Viernes 15/08 por la tarde">
           </div>
           <div class="mb-2">
+            <label class="form-label">Metodo de pago <span class="text-muted small">(opcional)</span></label>
+            <select name="metodo_pago" class="form-select">
+              <option value="">Sin especificar</option>
+              {% for m in metodos_pago %}
+              <option value="{{ m }}">{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
             <label class="form-label">Estado de pago</label>
-            <select name="estado_pago" class="form-select">
+            <select name="estado_pago" class="form-select" id="estadoPagoSelect" onchange="toggleSena()">
               {% for e in estados_pago %}
               <option value="{{ e }}">{{ e }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label">Monto ($) <span class="text-muted small">(opcional)</span></label>
+            <label class="form-label">Monto ($) <span class="text-muted small">(opcional, total)</span></label>
             <input type="text" name="monto" class="form-control" placeholder="0.00">
+          </div>
+          <div class="mb-2" id="senaWrap" style="display:none;">
+            <label class="form-label">Sena pagada ($)</label>
+            <input type="text" name="monto_sena" class="form-control" placeholder="0.00">
           </div>
           <div class="mb-3">
             <label class="form-label">Nota <span class="text-muted small">(opcional)</span></label>
@@ -65,7 +78,7 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover align-middle">
             <thead>
-              <tr><th>N.o</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th>Estado</th><th></th></tr>
+              <tr><th>N.o</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th>Estado</th><th>Metodo</th><th></th></tr>
             </thead>
             <tbody>
               {% for r in recibos %}
@@ -75,6 +88,7 @@
                 <td>{{ r.cliente_nombre }}</td>
                 <td class="small" style="max-width:220px;">{{ r.detalle }}</td>
                 <td class="small">{{ r.estado_pago }}</td>
+                <td class="small">{{ r.metodo_pago or "-" }}</td>
                 <td class="text-nowrap">
                   <a href="{{ url_for('recibo_pdf', recibo_id=r.id) }}" class="btn btn-sm btn-outline-dark">Descargar PDF</a>
                   <form method="post" action="{{ url_for('recibo_eliminar', recibo_id=r.id) }}" class="d-inline"
@@ -84,7 +98,7 @@
                 </td>
               </tr>
               {% else %}
-              <tr><td colspan="6" class="text-center text-muted">Todavia no generaste ningun recibo.</td></tr>
+              <tr><td colspan="7" class="text-center text-muted">Todavia no generaste ningun recibo.</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -94,4 +108,15 @@
   </div>
 </div>
 
+{% endblock %}
+{% block scripts %}
+<script>
+  function toggleSena() {
+    var sel = document.getElementById('estadoPagoSelect');
+    var wrap = document.getElementById('senaWrap');
+    if (!sel || !wrap) return;
+    wrap.style.display = sel.value === 'Seña pagada' ? 'block' : 'none';
+  }
+  document.addEventListener('DOMContentLoaded', toggleSena);
+</script>
 {% endblock %}
