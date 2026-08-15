@@ -12,6 +12,7 @@ from flask import (
 from reportlab.lib.pagesizes import A5
 from reportlab.lib.units import mm
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as pdfcanvas
 
 from monotributo_data import (
@@ -343,6 +344,16 @@ def init_db():
     for col, tipo in nuevas_columnas.items():
         if col not in cols:
             db.execute(f"ALTER TABLE transactions ADD COLUMN {col} {tipo}")
+
+    # --- Migracion: agregar columnas nuevas a recibos si faltan ---
+    cols_recibos = _column_names(db, "recibos")
+    nuevas_columnas_recibos = {
+        "metodo_pago": "TEXT",
+        "monto_sena": "REAL",
+    }
+    for col, tipo in nuevas_columnas_recibos.items():
+        if col not in cols_recibos:
+            db.execute(f"ALTER TABLE recibos ADD COLUMN {col} {tipo}")
 
     # --- Semilla inicial de Servicios y Precios (solo si la tabla esta vacia) ---
     hay_servicios = db.execute("SELECT COUNT(*) AS c FROM servicios_precios").fetchone()["c"]
@@ -1358,6 +1369,8 @@ def proveedores_eliminar(proveedor_id):
 # ---------- Recibos de ropa recibida ----------
 
 ESTADOS_PAGO_RECIBO = ["Paga al retirar", "Pagado", "Seña pagada"]
+METODOS_PAGO_RECIBO = ["Efectivo", "Transferencia", "Tarjeta"]
+LOGO_RECIBO_PATH = os.path.join(BASE_DIR, "static", "icono-mark.png")
 
 
 def _wrap_texto(c, texto, max_width, font="Helvetica", size=10):
@@ -1380,6 +1393,10 @@ def _wrap_texto(c, texto, max_width, font="Helvetica", size=10):
     return lineas
 
 
+def _formato_monto(valor):
+    return "$ " + "{:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _generar_pdf_recibo(recibo, nombre_negocio):
     buf = io.BytesIO()
     ancho, alto = A5
@@ -1387,72 +1404,186 @@ def _generar_pdf_recibo(recibo, nombre_negocio):
     margen = 14 * mm
     x0 = margen
     x1 = ancho - margen
-    y = alto - margen
+    ancho_contenido = x1 - x0
 
-    c.setFillColor(colors.HexColor("#1f3864"))
-    c.rect(0, alto - 26 * mm, ancho, 26 * mm, fill=1, stroke=0)
+    NAVY = colors.HexColor("#1f3864")
+    NAVY_DARK = colors.HexColor("#14264a")
+    GOLD = colors.HexColor("#d9a441")
+    GRIS_CLARO = colors.HexColor("#f4f2ec")
+    GRIS_TEXTO = colors.HexColor("#5f5e5a")
+    GRIS_BORDE = colors.HexColor("#e3e1d8")
+    AMBAR_BG = colors.HexColor("#faeeda")
+    AMBAR_TXT = colors.HexColor("#633806")
+    AMBAR_DOT = colors.HexColor("#ba7517")
+
+    # --- Encabezado ---
+    altura_header = 26 * mm
+    c.setFillColor(NAVY)
+    c.rect(0, alto - altura_header, ancho, altura_header, fill=1, stroke=0)
+    c.setFillColor(GOLD)
+    c.rect(0, alto - altura_header - 1.3 * mm, ancho, 1.3 * mm, fill=1, stroke=0)
+
+    logo_size = 14 * mm
+    logo_x = x0
+    logo_y = alto - altura_header / 2 - logo_size / 2
+    texto_x0 = x0
+    if os.path.exists(LOGO_RECIBO_PATH):
+        try:
+            c.saveState()
+            p = c.beginPath()
+            p.roundRect(logo_x, logo_y, logo_size, logo_size, 2.2 * mm)
+            c.clipPath(p, stroke=0, fill=0)
+            c.drawImage(
+                ImageReader(LOGO_RECIBO_PATH),
+                logo_x, logo_y, width=logo_size, height=logo_size,
+                mask="auto", preserveAspectRatio=True,
+            )
+            c.restoreState()
+            c.setStrokeColor(GOLD)
+            c.setLineWidth(0.6)
+            c.roundRect(logo_x, logo_y, logo_size, logo_size, 2.2 * mm, stroke=1, fill=0)
+            texto_x0 = logo_x + logo_size + 5 * mm
+        except Exception:
+            texto_x0 = x0
+
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(x0, alto - 12 * mm, nombre_negocio or "Lavanderia")
-    c.setFont("Helvetica", 10)
-    c.drawString(x0, alto - 19 * mm, "Recibo de ropa recibida")
-    c.setFont("Helvetica-Bold", 12)
-    c.drawRightString(x1, alto - 12 * mm, f"N.o {recibo['numero']:04d}")
-    c.setFont("Helvetica", 10)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(texto_x0, alto - 11 * mm, nombre_negocio or "Lavanderia")
+    c.setFillColor(GOLD)
+    c.setFont("Helvetica", 9.5)
+    c.drawString(texto_x0, alto - 17.5 * mm, "Recibo de ropa recibida")
+
+    badge_w, badge_h = 30 * mm, 7 * mm
+    badge_x = x1 - badge_w
+    badge_y = alto - 12.5 * mm
+    c.setFillColor(GOLD)
+    c.roundRect(badge_x, badge_y, badge_w, badge_h, badge_h / 2, stroke=0, fill=1)
+    c.setFillColor(NAVY_DARK)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawCentredString(badge_x + badge_w / 2, badge_y + 2.3 * mm, f"N.o {recibo['numero']:04d}")
+    c.setFillColor(colors.HexColor("#cdd6e8"))
+    c.setFont("Helvetica", 8.5)
     c.drawRightString(x1, alto - 19 * mm, recibo["fecha"])
 
-    y = alto - 34 * mm
-    c.setFillColor(colors.HexColor("#14264a"))
+    y = alto - altura_header - 1.3 * mm - 9 * mm
 
-    def campo(etiqueta, valor, y):
+    # --- Ficha del cliente ---
+    card_h = 20 * mm
+    c.setFillColor(GRIS_CLARO)
+    c.roundRect(x0, y - card_h, ancho_contenido, card_h, 2.5 * mm, stroke=0, fill=1)
+
+    def etiqueta_valor(x, y_top, etiqueta, valor):
+        c.setFillColor(GRIS_TEXTO)
+        c.setFont("Helvetica", 6.5)
+        c.drawString(x, y_top, etiqueta)
+        c.setFillColor(NAVY_DARK)
         c.setFont("Helvetica-Bold", 10)
-        c.drawString(x0, y, etiqueta)
-        c.setFont("Helvetica", 10)
-        c.drawString(x0 + 32 * mm, y, valor or "-")
-        return y - 6.5 * mm
+        c.drawString(x, y_top - 4.6 * mm, valor or "-")
 
-    y = campo("Cliente:", recibo["cliente_nombre"], y)
+    pad = 5 * mm
+    col2_x = x0 + ancho_contenido / 2 + pad
+    etiqueta_valor(x0 + pad, y - 6 * mm, "CLIENTE", recibo["cliente_nombre"])
     if recibo["cliente_telefono"]:
-        y = campo("Telefono:", recibo["cliente_telefono"], y)
+        etiqueta_valor(x0 + pad, y - 14.5 * mm, "TELEFONO", recibo["cliente_telefono"])
     if recibo["fecha_entrega"]:
-        y = campo("Retira el:", recibo["fecha_entrega"], y)
+        etiqueta_valor(col2_x, y - 14.5 * mm, "RETIRA EL", recibo["fecha_entrega"])
 
-    y -= 3 * mm
-    c.setStrokeColor(colors.HexColor("#d8dee6"))
-    c.line(x0, y, x1, y)
-    y -= 7 * mm
+    y -= card_h + 8 * mm
 
-    c.setFont("Helvetica-Bold", 10)
+    # --- Detalle de lo recibido ---
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", 10.5)
     c.drawString(x0, y, "Detalle de lo recibido")
-    y -= 6 * mm
+    c.setFillColor(GOLD)
+    c.rect(x0, y - 2.2 * mm, 13 * mm, 0.9 * mm, stroke=0, fill=1)
+    y -= 8 * mm
+
+    lineas_detalle = _wrap_texto(c, recibo["detalle"], ancho_contenido - 8 * mm, "Helvetica", 10)
+    caja_detalle_h = max(14 * mm, len(lineas_detalle) * 5.3 * mm + 6 * mm)
+    c.setFillColor(colors.white)
+    c.setStrokeColor(GRIS_BORDE)
+    c.roundRect(x0, y - caja_detalle_h, ancho_contenido, caja_detalle_h, 2 * mm, stroke=1, fill=1)
+    c.setFillColor(colors.HexColor("#2c2c2a"))
     c.setFont("Helvetica", 10)
-    for linea in _wrap_texto(c, recibo["detalle"], x1 - x0, "Helvetica", 10):
-        c.drawString(x0, y, linea)
-        y -= 5.5 * mm
+    yl = y - 5.5 * mm
+    for linea in lineas_detalle:
+        c.drawString(x0 + 4 * mm, yl, linea)
+        yl -= 5.3 * mm
 
-    y -= 3 * mm
-    c.setStrokeColor(colors.HexColor("#d8dee6"))
-    c.line(x0, y, x1, y)
-    y -= 8 * mm
+    y -= caja_detalle_h + 8 * mm
 
-    c.setFont("Helvetica-Bold", 11)
-    if recibo["monto"] is not None:
-        monto_txt = "$ " + "{:,.2f}".format(recibo["monto"]).replace(",", "X").replace(".", ",").replace("X", ".")
-        c.drawString(x0, y, f"{recibo['estado_pago']}: {monto_txt}")
-    else:
-        c.drawString(x0, y, recibo["estado_pago"])
-    y -= 8 * mm
+    # --- Pago ---
+    tiene_sena = recibo["estado_pago"] == "Seña pagada" and recibo["monto_sena"] is not None
+    card_pago_h = 26 * mm if tiene_sena else 16 * mm
+    c.setFillColor(GRIS_CLARO)
+    c.roundRect(x0, y - card_pago_h, ancho_contenido, card_pago_h, 2.5 * mm, stroke=0, fill=1)
 
+    if recibo["metodo_pago"]:
+        etiqueta_valor(x0 + pad, y - 6 * mm, "METODO DE PAGO", recibo["metodo_pago"])
+
+    colores_estado = {
+        "Pagado": (colors.HexColor("#eaf3de"), colors.HexColor("#3b6d11"), colors.HexColor("#639922")),
+        "Seña pagada": (AMBAR_BG, AMBAR_TXT, AMBAR_DOT),
+        "Paga al retirar": (colors.HexColor("#f1efe8"), colors.HexColor("#444441"), colors.HexColor("#888780")),
+    }
+    bg_estado, txt_estado, dot_estado = colores_estado.get(
+        recibo["estado_pago"], (GRIS_CLARO, GRIS_TEXTO, GRIS_TEXTO)
+    )
+    c.setFont("Helvetica-Bold", 7.5)
+    ancho_texto_estado = c.stringWidth(recibo["estado_pago"], "Helvetica-Bold", 7.5)
+    badge_estado_h = 6.5 * mm
+    badge_estado_w = ancho_texto_estado + 9 * mm
+    badge_estado_x = x1 - pad - badge_estado_w
+    badge_estado_y = y - 8.2 * mm
+    c.setFillColor(bg_estado)
+    c.roundRect(badge_estado_x, badge_estado_y, badge_estado_w, badge_estado_h, badge_estado_h / 2, stroke=0, fill=1)
+    c.setFillColor(dot_estado)
+    c.circle(badge_estado_x + 3.5 * mm, badge_estado_y + badge_estado_h / 2, 0.9 * mm, stroke=0, fill=1)
+    c.setFillColor(txt_estado)
+    c.drawString(badge_estado_x + 6 * mm, badge_estado_y + 2.2 * mm, recibo["estado_pago"])
+
+    if tiene_sena:
+        c.setStrokeColor(GRIS_BORDE)
+        c.line(x0 + pad, y - 15.5 * mm, x1 - pad, y - 15.5 * mm)
+        saldo = (recibo["monto"] or 0) - (recibo["monto_sena"] or 0)
+        etiqueta_valor(x0 + pad, y - 21.5 * mm, "SEÑA PAGADA", _formato_monto(recibo["monto_sena"]))
+        c.setFillColor(GRIS_TEXTO)
+        c.setFont("Helvetica", 6.5)
+        c.drawRightString(x1 - pad, y - 21.5 * mm, "SALDO A COBRAR")
+        c.setFillColor(NAVY)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawRightString(x1 - pad, y - 26.3 * mm, _formato_monto(saldo))
+    elif recibo["monto"] is not None:
+        c.setFillColor(GRIS_TEXTO)
+        c.setFont("Helvetica", 6.5)
+        c.drawRightString(x1 - pad, y - 13 * mm, "TOTAL")
+        c.setFillColor(NAVY)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawRightString(x1 - pad, y - 17.8 * mm, _formato_monto(recibo["monto"]))
+
+    y -= card_pago_h + 8 * mm
+
+    # --- Nota ---
     if recibo["nota"]:
-        c.setFont("Helvetica-Oblique", 9)
-        c.setFillColor(colors.HexColor("#5f5e5a"))
-        for linea in _wrap_texto(c, recibo["nota"], x1 - x0, "Helvetica-Oblique", 9):
-            c.drawString(x0, y, linea)
-            y -= 5 * mm
+        lineas_nota = _wrap_texto(c, recibo["nota"], ancho_contenido - 8 * mm, "Helvetica-Oblique", 9)
+        alto_nota = len(lineas_nota) * 4.6 * mm + 4 * mm
+        c.setFillColor(GOLD)
+        c.rect(x0, y - alto_nota, 0.9 * mm, alto_nota, stroke=0, fill=1)
+        c.setFillColor(GRIS_TEXTO)
+        c.setFont("Helvetica-Oblique", 8.5)
+        c.drawString(x0 + 4 * mm, y - 4 * mm, "Nota:")
+        yl = y - 8.6 * mm
+        for linea in lineas_nota:
+            c.drawString(x0 + 4 * mm, yl, linea)
+            yl -= 4.6 * mm
+        y -= alto_nota + 6 * mm
 
-    c.setFont("Helvetica", 8)
+    # --- Pie ---
+    c.setStrokeColor(GRIS_BORDE)
+    c.line(x0, margen + 9 * mm, x1, margen + 9 * mm)
     c.setFillColor(colors.HexColor("#888780"))
-    c.drawCentredString(ancho / 2, margen / 2 + 4, "Conserva este recibo para retirar tu ropa")
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(ancho / 2, margen + 4 * mm, "Conservá este recibo para retirar tu ropa")
 
     c.showPage()
     c.save()
@@ -1471,20 +1602,26 @@ def recibos():
             flash("Falta el nombre del cliente o el detalle de la ropa", "error")
             return redirect(url_for("recibos"))
 
-        monto_raw = (request.form.get("monto") or "").strip()
-        monto = None
-        if monto_raw:
+        def _parsear_monto(campo):
+            crudo = (request.form.get(campo) or "").strip()
+            if not crudo:
+                return None
             try:
-                monto = float(monto_raw.replace(",", "."))
+                return float(crudo.replace(",", "."))
             except ValueError:
-                monto = None
+                return None
+
+        monto = _parsear_monto("monto")
+        estado_pago = request.form.get("estado_pago") or "Paga al retirar"
+        monto_sena = _parsear_monto("monto_sena") if estado_pago == "Seña pagada" else None
 
         ultimo = db.execute("SELECT COALESCE(MAX(numero),0) AS m FROM recibos").fetchone()["m"]
 
         db.execute(
             "INSERT INTO recibos "
-            "(numero, fecha, cliente_nombre, cliente_telefono, detalle, fecha_entrega, monto, estado_pago, nota, creado_en) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "(numero, fecha, cliente_nombre, cliente_telefono, detalle, fecha_entrega, monto, estado_pago, "
+            "metodo_pago, monto_sena, nota, creado_en) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 ultimo + 1,
                 request.form.get("fecha") or date.today().isoformat(),
@@ -1493,7 +1630,9 @@ def recibos():
                 detalle,
                 (request.form.get("fecha_entrega") or "").strip(),
                 monto,
-                request.form.get("estado_pago") or "Paga al retirar",
+                estado_pago,
+                (request.form.get("metodo_pago") or "").strip() or None,
+                monto_sena,
                 (request.form.get("nota") or "").strip(),
                 datetime.now().isoformat(),
             ),
@@ -1510,6 +1649,7 @@ def recibos():
         "recibos.html",
         recibos=filas,
         estados_pago=ESTADOS_PAGO_RECIBO,
+        metodos_pago=METODOS_PAGO_RECIBO,
         nombres_clientes=nombres_clientes,
         hoy=date.today().isoformat(),
     )
