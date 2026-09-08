@@ -97,6 +97,19 @@ body {
   background-color: rgba(220, 53, 69, 0.15) !important;
 }
 
+[data-theme="dark"] .btn-outline-dark,
+[data-theme="dark"] .btn-outline-secondary {
+  color: var(--text-main);
+  border-color: #445a86;
+}
+
+[data-theme="dark"] .btn-outline-dark:hover,
+[data-theme="dark"] .btn-outline-secondary:hover {
+  background-color: #223458;
+  color: var(--text-main);
+  border-color: #445a86;
+}
+
 /* ---------- Theme toggle (floating) ---------- */
 .theme-toggle-fab {
   position: fixed;
