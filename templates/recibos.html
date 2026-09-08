@@ -74,7 +74,29 @@
   <div class="col-lg-8">
     <div class="card shadow-sm">
       <div class="card-body">
-        <h5 class="card-title">Ultimos recibos</h5>
+        <h5 class="card-title">{{ "Resultados de la busqueda" if buscando else "Ultimos recibos" }}</h5>
+        <form method="get" class="row g-2 mb-3">
+          <div class="col-md-5">
+            <input type="text" name="q" class="form-control form-control-sm" placeholder="Buscar por cliente, numero o nota..." value="{{ q }}">
+          </div>
+          <div class="col-md-3">
+            <input type="date" name="desde" class="form-control form-control-sm" value="{{ desde }}">
+          </div>
+          <div class="col-md-3">
+            <input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta }}">
+          </div>
+          <div class="col-md-1 d-grid">
+            <button type="submit" class="btn btn-sm btn-dark">Buscar</button>
+          </div>
+        </form>
+        {% if buscando %}
+        <p class="small text-muted">
+          {{ recibos|length }} resultado(s).
+          <a href="{{ url_for('recibos') }}">Limpiar busqueda</a>
+        </p>
+        {% else %}
+        <p class="small text-muted">Se muestran los ultimos 100. Busca arriba para encontrar cualquier recibo.</p>
+        {% endif %}
         <div class="table-responsive">
           <table class="table table-sm table-hover align-middle">
             <thead>
@@ -90,7 +112,8 @@
                 <td class="small">{{ r.estado_pago }}</td>
                 <td class="small">{{ r.metodo_pago or "-" }}</td>
                 <td class="text-nowrap">
-                  <a href="{{ url_for('recibo_pdf', recibo_id=r.id) }}" class="btn btn-sm btn-outline-dark">Descargar PDF</a>
+                  <a href="{{ url_for('recibo_ver', recibo_id=r.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                  <a href="{{ url_for('recibo_pdf', recibo_id=r.id) }}" class="btn btn-sm btn-outline-dark">Descargar</a>
                   <form method="post" action="{{ url_for('recibo_eliminar', recibo_id=r.id) }}" class="d-inline"
                         onsubmit="return confirm('¿Eliminar este recibo?');">
                     <button type="submit" class="btn btn-sm btn-outline-secondary">✕</button>
@@ -98,7 +121,7 @@
                 </td>
               </tr>
               {% else %}
-              <tr><td colspan="7" class="text-center text-muted">Todavia no generaste ningun recibo.</td></tr>
+              <tr><td colspan="7" class="text-center text-muted">{{ "No se encontraron recibos." if buscando else "Todavia no generaste ningun recibo." }}</td></tr>
               {% endfor %}
             </tbody>
           </table>
