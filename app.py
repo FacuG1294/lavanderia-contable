@@ -1641,7 +1641,34 @@ def recibos():
         flash("Recibo generado", "success")
         return redirect(url_for("recibos"))
 
-    filas = db.execute("SELECT * FROM recibos ORDER BY id DESC LIMIT 100").fetchall()
+    q = (request.args.get("q") or "").strip()
+    desde = (request.args.get("desde") or "").strip()
+    hasta = (request.args.get("hasta") or "").strip()
+    buscando = bool(q or desde or hasta)
+
+    condiciones = []
+    params = []
+    if q:
+        like = f"%{q.lower()}%"
+        condiciones.append(
+            "(LOWER(cliente_nombre) LIKE ? OR LOWER(detalle) LIKE ? OR LOWER(COALESCE(nota,'')) LIKE ? "
+            "OR CAST(numero AS TEXT) LIKE ?)"
+        )
+        numero_q = q.lstrip("0") or "0" if q.isdigit() else q
+        params.extend([like, like, like, f"%{numero_q}%"])
+    if desde:
+        condiciones.append("fecha >= ?")
+        params.append(desde)
+    if hasta:
+        condiciones.append("fecha <= ?")
+        params.append(hasta)
+
+    where_sql = ("WHERE " + " AND ".join(condiciones)) if condiciones else ""
+    limite_sql = "" if buscando else "LIMIT 100"
+    filas = db.execute(
+        f"SELECT * FROM recibos {where_sql} ORDER BY id DESC {limite_sql}", params
+    ).fetchall()
+
     nombres_clientes = [
         row["nombre"] for row in db.execute("SELECT nombre FROM clientes ORDER BY nombre").fetchall()
     ]
@@ -1652,6 +1679,10 @@ def recibos():
         metodos_pago=METODOS_PAGO_RECIBO,
         nombres_clientes=nombres_clientes,
         hoy=date.today().isoformat(),
+        q=q,
+        desde=desde,
+        hasta=hasta,
+        buscando=buscando,
     )
 
 
@@ -1668,6 +1699,22 @@ def recibo_pdf(recibo_id):
         buf.read(),
         mimetype="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=recibo-{recibo['numero']:04d}.pdf"},
+    )
+
+
+@app.route("/recibos/<int:recibo_id>/ver")
+@login_required
+def recibo_ver(recibo_id):
+    db = get_db()
+    recibo = db.execute("SELECT * FROM recibos WHERE id = ?", (recibo_id,)).fetchone()
+    if not recibo:
+        return "Recibo no encontrado", 404
+    nombre_negocio = get_setting("nombre_negocio", "Lavandería Tifón")
+    buf = _generar_pdf_recibo(recibo, nombre_negocio)
+    return Response(
+        buf.read(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"inline; filename=recibo-{recibo['numero']:04d}.pdf"},
     )
 
 
