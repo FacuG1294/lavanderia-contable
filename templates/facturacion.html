@@ -61,10 +61,10 @@
       </div>
       <form method="post" action="{{ url_for('facturacion_vincular') }}" class="d-flex gap-2">
         <input type="hidden" name="comprobante_id" value="{{ c.id }}">
-        <select name="ingreso_id" class="form-select form-select-sm" style="max-width:260px;" required>
-          <option value="">Vincular a ingreso...</option>
-          {% for ing in ingresos_vinculables %}
-          <option value="{{ ing.id }}">{{ ing.fecha }} · {{ ing.categoria }} · $ {{ "{:,.0f}".format(ing.monto).replace(",", ".") }}{{ " · " + ing.contraparte if ing.contraparte }}</option>
+        <select name="pedido_id" class="form-select form-select-sm" style="max-width:260px;" required>
+          <option value="">Vincular a pedido...</option>
+          {% for p in pedidos_vinculables %}
+          <option value="{{ p.id }}">{{ p.fecha }} · $ {{ "{:,.0f}".format(p.monto_total).replace(",", ".") }}{{ " · " + p.cliente_nombre if p.cliente_nombre }}</option>
           {% endfor %}
         </select>
         <button type="submit" class="btn btn-sm btn-dark text-nowrap">Vincular</button>
@@ -77,20 +77,20 @@
 </div>
 {% endif %}
 
-{% if ingresos_sin_comprobante %}
+{% if pedidos_sin_comprobante %}
 <div class="card shadow-sm mb-4">
   <div class="card-body">
-    <h6 class="card-title">Ingresos marcados como facturados sin comprobante encontrado</h6>
+    <h6 class="card-title">Pedidos marcados como facturados sin comprobante encontrado</h6>
     <p class="small text-muted">Vinculalos a mano a un comprobante ya importado, o revisa el numero de factura cargado.</p>
-    {% for i in ingresos_sin_comprobante %}
+    {% for p in pedidos_sin_comprobante %}
     <div class="d-flex align-items-center gap-2 flex-wrap py-2 {{ 'border-top' if not loop.first }}">
       <div class="flex-grow-1" style="min-width:200px;">
-        <div class="fw-semibold small">{{ i.fecha }} &middot; {{ i.categoria }}</div>
-        <div class="small text-muted">{{ i.contraparte or "-" }} &middot; $ {{ "{:,.2f}".format(i.monto).replace(",", "X").replace(".", ",").replace("X", ".") }} &middot; N° cargado: {{ i.numero_factura or "-" }}</div>
+        <div class="fw-semibold small">{{ p.fecha }} &middot; {{ p.cliente_nombre or "-" }}</div>
+        <div class="small text-muted">$ {{ "{:,.2f}".format(p.monto_total).replace(",", "X").replace(".", ",").replace("X", ".") }} &middot; N° cargado: {{ p.numero_factura or "-" }}</div>
       </div>
       {% if comprobantes_sin_ingreso %}
       <form method="post" action="{{ url_for('facturacion_vincular') }}" class="d-flex gap-2">
-        <input type="hidden" name="ingreso_id" value="{{ i.id }}">
+        <input type="hidden" name="pedido_id" value="{{ p.id }}">
         <select name="comprobante_id" class="form-select form-select-sm" style="max-width:260px;" required>
           <option value="">Vincular a comprobante...</option>
           {% for c in comprobantes_sin_ingreso %}
