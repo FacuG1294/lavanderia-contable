@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block titulo %}Ingresos{% endblock %}
+{% block contenido %}
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Nuevo pedido</h5>
+        <p class="small text-muted">Un pedido puede tener varias prendas o servicios distintos, pero cuenta como una sola visita del cliente.</p>
+        <form method="post" id="pedidoForm">
+          <div class="mb-2">
+            <label class="form-label">Fecha</label>
+            <input type="date" name="fecha" class="form-control" value="{{ prefill.fecha if prefill and prefill.fecha else hoy }}" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Cliente <span class="text-muted small">(opcional)</span></label>
+            <input type="text" name="contraparte" class="form-control" value="{{ prefill.contraparte if prefill else '' }}" {% if nombres_clientes %}list="clientesDatalist"{% endif %}>
+            {% if nombres_clientes %}
+            <datalist id="clientesDatalist">
+              {% for n in nombres_clientes %}
+              <option value="{{ n }}">
+              {% endfor %}
+            </datalist>
+            {% endif %}
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Medio de pago</label>
+            <select name="medio_pago" class="form-select">
+              {% for mp in medios_pago %}
+              <option value="{{ mp }}">{{ mp }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">¿Se facturó?</label>
+            <select name="facturado" class="form-select" id="facturadoSelect" onchange="toggleNumFactura()">
+              <option value="0" {{ '' if prefill else 'selected' }}>No</option>
+              <option value="1" {{ 'selected' if prefill else '' }}>Si</option>
+            </select>
+          </div>
+          <div class="mb-3" id="numFacturaWrap" style="display:{{ 'block' if prefill else 'none' }};">
+            <label class="form-label">N° de factura</label>
+            <input type="text" name="numero_factura" class="form-control" placeholder="0001-00000123" value="{{ prefill.numero_factura if prefill else '' }}">
+          </div>
+
+          <label class="form-label mb-1">Lineas del pedido</label>
+          <div id="lineasWrap">
+            <div class="linea-pedido row g-2 mb-2">
+              <div class="col-12 col-md-4">
+                <select name="categoria[]" class="form-select form-select-sm" required>
+                  {% for c in categorias %}
+                  <option value="{{ c }}">{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% if orden_secciones %}
+              <div class="col-12 col-md-4">
+                <select class="form-select form-select-sm servicio-select" onchange="autocompletarMontoLinea(this)">
+                  <option value="">Servicio (opcional)</option>
+                  {% for seccion in orden_secciones %}
+                  <optgroup label="{{ seccion }}">
+                    {% for s in servicios_grupos[seccion] %}
+                    <option value="{{ '%.2f'|format(s.precio) }}" data-nombre="{{ s.nombre }}">{{ s.nombre }} (${{ '{:,.0f}'.format(s.precio).replace(',', '.') }})</option>
+                    {% endfor %}
+                  </optgroup>
+                  {% endfor %}
+                </select>
+                <input type="hidden" name="servicio[]" class="servicio-hidden">
+              </div>
+              {% endif %}
+              <div class="col-8 col-md-{{ 3 if orden_secciones else 6 }}">
+                <input type="text" name="monto[]" class="form-control form-control-sm monto-linea" placeholder="Monto" value="{{ prefill.monto if prefill else '' }}" oninput="recalcularTotal()" required>
+              </div>
+              <div class="col-4 col-md-1 d-grid">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="quitarLinea(this)">✕</button>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-dark mb-3" onclick="agregarLinea()">+ Agregar linea</button>
+
+          <div class="d-flex justify-content-between align-items-center mb-3 p-2 rounded" style="background:var(--bg);">
+            <span class="text-muted small">Total del pedido</span>
+            <span class="fw-bold" id="totalPedido">$ 0,00</span>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Nota (opcional)</label>
+            <input type="text" name="nota" class="form-control">
+          </div>
+          <button type="submit" class="btn btn-success w-100">Guardar pedido</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <form method="get" action="{{ url_for('ingresos') }}" class="row g-2 align-items-end">
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted mb-1">Desde</label>
+            <input type="date" name="desde" class="form-control form-control-sm" value="{{ filtros.desde }}">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted mb-1">Hasta</label>
+            <input type="date" name="hasta" class="form-control form-control-sm" value="{{ filtros.hasta }}">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted mb-1">Categoria</label>
+            <select name="categoria" class="form-select form-select-sm">
+              <option value="">Todas</option>
+              {% for c in categorias %}
+              <option value="{{ c }}" {{ 'selected' if c == filtros.categoria else '' }}>{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted mb-1">Cliente</label>
+            <input type="text" name="contraparte" class="form-control form-control-sm" placeholder="Nombre..." value="{{ filtros.contraparte }}">
+          </div>
+          <div class="col-12 col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-dark flex-grow-1 text-nowrap" title="Buscar">🔍 Buscar</button>
+            <a href="{{ url_for('ingresos') }}" class="btn btn-sm btn-outline-secondary flex-grow-1 text-nowrap" title="Limpiar filtros">Limpiar</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">
+          {% if hay_filtro %}{{ filas|length }} movimiento(s) encontrado(s){% else %}Ultimos ingresos{% endif %}
+        </h5>
+        <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+          <thead>
+            <tr>
+              <th class="text-nowrap">Fecha</th><th>Categoria</th><th>Medio</th><th>Cliente</th>
+              <th>Facturado</th>
+              <th>Nota</th><th class="text-end text-nowrap">Monto</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in filas %}
+            <tr>
+              <td class="text-nowrap">{{ f.fecha }}</td>
+              <td>{{ f.categoria }}</td>
+              <td>{{ f.medio_pago or "-" }}</td>
+              <td>{{ f.contraparte or "-" }}</td>
+              <td>
+                <form method="post" action="{{ url_for('actualizar_facturacion', mov_id=f.id) }}" class="d-flex gap-1 align-items-center flex-nowrap">
+                  <select name="facturado" class="form-select form-select-sm" style="width:auto;" onchange="this.form.requestSubmit()">
+                    <option value="0" {{ 'selected' if not f.facturado else '' }}>No</option>
+                    <option value="1" {{ 'selected' if f.facturado else '' }}>Si</option>
+                  </select>
+                  <input type="text" name="numero_factura" value="{{ f.numero_factura or '' }}" placeholder="N° factura"
+                         class="form-control form-control-sm" style="width:130px;" onblur="this.form.requestSubmit()">
+                </form>
+              </td>
+              <td>{{ f.nota or "-" }}</td>
+              <td class="text-end text-nowrap">$ {{ "{:,.2f}".format(f.monto).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+              <td class="text-end">
+                <form method="post" action="{{ url_for('eliminar_movimiento', mov_id=f.id) }}" onsubmit="return confirm('¿Eliminar este movimiento?');">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">Borrar</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted">No hay movimientos todavia.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleNumFactura() {
+    var sel = document.getElementById('facturadoSelect');
+    var wrap = document.getElementById('numFacturaWrap');
+    if (!sel || !wrap) return;
+    wrap.style.display = sel.value === '1' ? 'block' : 'none';
+  }
+
+  function autocompletarMontoLinea(select) {
+    var linea = select.closest('.linea-pedido');
+    if (!linea) return;
+    var monto = linea.querySelector('.monto-linea');
+    var hidden = linea.querySelector('.servicio-hidden');
+    var opt = select.options[select.selectedIndex];
+    if (hidden) {
+      hidden.value = (select.value && opt) ? (opt.getAttribute('data-nombre') || '') : '';
+    }
+    if (monto && select.value) {
+      monto.value = select.value;
+    }
+    recalcularTotal();
+  }
+
+  function agregarLinea() {
+    var wrap = document.getElementById('lineasWrap');
+    var primera = wrap.querySelector('.linea-pedido');
+    var clone = primera.cloneNode(true);
+    clone.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+    clone.querySelectorAll('select').forEach(function (s) { s.selectedIndex = 0; });
+    wrap.appendChild(clone);
+    recalcularTotal();
+  }
+
+  function quitarLinea(btn) {
+    var wrap = document.getElementById('lineasWrap');
+    if (wrap.querySelectorAll('.linea-pedido').length <= 1) return;
+    btn.closest('.linea-pedido').remove();
+    recalcularTotal();
+  }
+
+  function recalcularTotal() {
+    var total = 0;
+    document.querySelectorAll('.monto-linea').forEach(function (i) {
+      var v = parseFloat((i.value || '0').replace(',', '.'));
+      if (!isNaN(v)) total += v;
+    });
+    var texto = '$ ' + total.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d)(?=,))/g, '.');
+    document.getElementById('totalPedido').textContent = texto;
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    toggleNumFactura();
+    recalcularTotal();
+  });
+</script>
+{% endblock %}
