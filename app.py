@@ -133,6 +133,55 @@ def _column_names(db, table):
         return {row["name"] for row in rows}
 
 
+def _crear_pedido(db, fecha, cliente_nombre, medio_pago, facturado, numero_factura, nota, creado_en):
+    """Inserta una fila en pedidos y devuelve su id (compatible Postgres/SQLite)."""
+    if BACKEND == "postgres":
+        cur = db.execute(
+            "INSERT INTO pedidos (fecha, cliente_nombre, medio_pago, facturado, numero_factura, nota, creado_en) "
+            "VALUES (?,?,?,?,?,?,?) RETURNING id",
+            (fecha, cliente_nombre, medio_pago, facturado, numero_factura, nota, creado_en),
+        )
+        return cur.fetchone()["id"]
+    else:
+        cur = db.execute(
+            "INSERT INTO pedidos (fecha, cliente_nombre, medio_pago, facturado, numero_factura, nota, creado_en) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (fecha, cliente_nombre, medio_pago, facturado, numero_factura, nota, creado_en),
+        )
+        return cur.lastrowid
+
+
+def _migrar_pedidos(db):
+    """Migracion de datos, idempotente: cada transaction de tipo ingreso que todavia
+    no tiene pedido_id pasa a tener su propio pedido (1 linea), sin tocar sus datos.
+    Despues, re-vincula los comprobantes de ARCA ya conciliados al nuevo pedido_id."""
+    huerfanas = db.execute(
+        "SELECT * FROM transactions WHERE tipo='ingreso' AND pedido_id IS NULL ORDER BY id"
+    ).fetchall()
+    for t in huerfanas:
+        nuevo_id = _crear_pedido(
+            db,
+            t["fecha"],
+            t["contraparte"],
+            t["medio_pago"],
+            t["facturado"] or 0,
+            t["numero_factura"],
+            t["nota"],
+            t["creado_en"],
+        )
+        db.execute("UPDATE transactions SET pedido_id = ? WHERE id = ?", (nuevo_id, t["id"]))
+    db.commit()
+
+    pendientes = db.execute(
+        "SELECT * FROM comprobantes_arca WHERE ingreso_id IS NOT NULL AND pedido_id IS NULL"
+    ).fetchall()
+    for c in pendientes:
+        t = db.execute("SELECT pedido_id FROM transactions WHERE id = ?", (c["ingreso_id"],)).fetchone()
+        if t and t["pedido_id"]:
+            db.execute("UPDATE comprobantes_arca SET pedido_id = ? WHERE id = ?", (t["pedido_id"], c["id"]))
+    db.commit()
+
+
 def init_db():
     db = _connect()
 
@@ -228,6 +277,18 @@ def init_db():
                 fecha_entrega TEXT,
                 monto REAL,
                 estado_pago TEXT NOT NULL DEFAULT 'Paga al retirar',
+                nota TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS pedidos (
+                id SERIAL PRIMARY KEY,
+                fecha TEXT NOT NULL,
+                cliente_nombre TEXT,
+                medio_pago TEXT,
+                facturado INTEGER NOT NULL DEFAULT 0,
+                numero_factura TEXT,
                 nota TEXT,
                 creado_en TEXT NOT NULL
             )
@@ -328,6 +389,18 @@ def init_db():
                 creado_en TEXT NOT NULL
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS pedidos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha TEXT NOT NULL,
+                cliente_nombre TEXT,
+                medio_pago TEXT,
+                facturado INTEGER NOT NULL DEFAULT 0,
+                numero_factura TEXT,
+                nota TEXT,
+                creado_en TEXT NOT NULL
+            )
+        """)
 
     # --- Migracion: agregar columnas nuevas a transactions si faltan ---
     cols = _column_names(db, "transactions")
@@ -340,6 +413,7 @@ def init_db():
         "comprobante_data": "TEXT",
         "comprobante_mime": "TEXT",
         "servicio": "TEXT",
+        "pedido_id": "INTEGER",
     }
     for col, tipo in nuevas_columnas.items():
         if col not in cols:
@@ -354,6 +428,21 @@ def init_db():
     for col, tipo in nuevas_columnas_recibos.items():
         if col not in cols_recibos:
             db.execute(f"ALTER TABLE recibos ADD COLUMN {col} {tipo}")
+
+    # --- Migracion: agregar columnas nuevas a comprobantes_arca si faltan ---
+    cols_comprobantes = _column_names(db, "comprobantes_arca")
+    nuevas_columnas_comprobantes = {
+        "pedido_id": "INTEGER",
+    }
+    for col, tipo in nuevas_columnas_comprobantes.items():
+        if col not in cols_comprobantes:
+            db.execute(f"ALTER TABLE comprobantes_arca ADD COLUMN {col} {tipo}")
+
+    db.commit()
+
+    # --- Migracion de datos: cada ingreso viejo (sin pedido_id) pasa a ser su propio
+    # pedido de 1 sola linea. No se pierde ni se altera ningun dato existente. ---
+    _migrar_pedidos(db)
 
     # --- Semilla inicial de Servicios y Precios (solo si la tabla esta vacia) ---
     hay_servicios = db.execute("SELECT COUNT(*) AS c FROM servicios_precios").fetchone()["c"]
@@ -804,30 +893,46 @@ def _servicios_agrupados():
 def ingresos():
     db = get_db()
     if request.method == "POST":
-        try:
-            monto = float(request.form.get("monto", "0").replace(",", "."))
-        except ValueError:
-            flash("Monto invalido", "error")
+        fecha = request.form.get("fecha") or date.today().isoformat()
+        cliente_nombre = (request.form.get("contraparte") or "").strip()
+        medio_pago = request.form.get("medio_pago")
+        facturado = 1 if request.form.get("facturado") == "1" else 0
+        numero_factura = (request.form.get("numero_factura") or "").strip()
+        nota = (request.form.get("nota") or "").strip()
+
+        categorias_l = request.form.getlist("categoria[]")
+        servicios_l = request.form.getlist("servicio[]")
+        montos_l = request.form.getlist("monto[]")
+
+        lineas = []
+        for i, cat in enumerate(categorias_l):
+            cat = (cat or "").strip()
+            monto_raw = (montos_l[i] if i < len(montos_l) else "").strip()
+            serv = (servicios_l[i] if i < len(servicios_l) else "").strip()
+            if not cat or not monto_raw:
+                continue
+            try:
+                monto = float(monto_raw.replace(",", "."))
+            except ValueError:
+                continue
+            lineas.append((cat, serv, monto))
+
+        if not lineas:
+            flash("Agrega al menos una linea con categoria y monto validos", "error")
             return redirect(url_for("ingresos"))
-        db.execute(
-            "INSERT INTO transactions "
-            "(tipo, fecha, categoria, monto, medio_pago, contraparte, nota, facturado, numero_factura, servicio, creado_en) "
-            "VALUES ('ingreso', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                request.form.get("fecha") or date.today().isoformat(),
-                request.form.get("categoria"),
-                monto,
-                request.form.get("medio_pago"),
-                request.form.get("contraparte", ""),
-                request.form.get("nota", ""),
-                1 if request.form.get("facturado") == "1" else 0,
-                request.form.get("numero_factura", "").strip(),
-                request.form.get("servicio", "").strip(),
-                datetime.now().isoformat(),
-            ),
-        )
+
+        creado_en = datetime.now().isoformat()
+        pedido_id = _crear_pedido(db, fecha, cliente_nombre, medio_pago, facturado, numero_factura, nota, creado_en)
+
+        for cat, serv, monto in lineas:
+            db.execute(
+                "INSERT INTO transactions "
+                "(tipo, fecha, categoria, monto, medio_pago, contraparte, nota, facturado, numero_factura, servicio, pedido_id, creado_en) "
+                "VALUES ('ingreso', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (fecha, cat, monto, medio_pago, cliente_nombre, nota, facturado, numero_factura, serv, pedido_id, creado_en),
+            )
         db.commit()
-        flash("Ingreso registrado", "success")
+        flash("Pedido registrado", "success")
         return redirect(url_for("ingresos"))
 
     filas, filtros, hay_filtro = _query_movimientos(db, "ingreso", request.args)
@@ -844,7 +949,7 @@ def ingresos():
             "numero_factura": request.args.get("prefill_numero_factura", ""),
         }
     return render_template(
-        "movimientos.html",
+        "ingresos.html",
         tipo="ingreso",
         titulo="Ingresos",
         categorias=INGRESO_CATEGORIAS,
@@ -864,14 +969,26 @@ def ingresos():
 @login_required
 def actualizar_facturacion(mov_id):
     db = get_db()
-    db.execute(
-        "UPDATE transactions SET facturado = ?, numero_factura = ? WHERE id = ? AND tipo = 'ingreso'",
-        (
-            1 if request.form.get("facturado") == "1" else 0,
-            request.form.get("numero_factura", "").strip(),
-            mov_id,
-        ),
-    )
+    facturado = 1 if request.form.get("facturado") == "1" else 0
+    numero_factura = (request.form.get("numero_factura") or "").strip()
+
+    row = db.execute("SELECT pedido_id FROM transactions WHERE id = ?", (mov_id,)).fetchone()
+    pedido_id = row["pedido_id"] if row else None
+
+    if pedido_id:
+        db.execute(
+            "UPDATE pedidos SET facturado = ?, numero_factura = ? WHERE id = ?",
+            (facturado, numero_factura, pedido_id),
+        )
+        db.execute(
+            "UPDATE transactions SET facturado = ?, numero_factura = ? WHERE pedido_id = ?",
+            (facturado, numero_factura, pedido_id),
+        )
+    else:
+        db.execute(
+            "UPDATE transactions SET facturado = ?, numero_factura = ? WHERE id = ? AND tipo = 'ingreso'",
+            (facturado, numero_factura, mov_id),
+        )
     db.commit()
     flash("Facturacion actualizada", "success")
     return redirect(url_for("ingresos"))
@@ -964,8 +1081,21 @@ def gastos():
 @login_required
 def eliminar_movimiento(mov_id):
     db = get_db()
-    row = db.execute("SELECT tipo FROM transactions WHERE id = ?", (mov_id,)).fetchone()
+    row = db.execute("SELECT tipo, pedido_id FROM transactions WHERE id = ?", (mov_id,)).fetchone()
     db.execute("DELETE FROM transactions WHERE id = ?", (mov_id,))
+
+    if row and row["pedido_id"]:
+        quedan = db.execute(
+            "SELECT COUNT(*) AS c FROM transactions WHERE pedido_id = ?", (row["pedido_id"],)
+        ).fetchone()["c"]
+        if not quedan:
+            # el pedido se quedo sin lineas: lo borramos y desvinculamos su comprobante si tenia
+            db.execute(
+                "UPDATE comprobantes_arca SET pedido_id = NULL, conciliado = 0 WHERE pedido_id = ?",
+                (row["pedido_id"],),
+            )
+            db.execute("DELETE FROM pedidos WHERE id = ?", (row["pedido_id"],))
+
     db.commit()
     flash("Movimiento eliminado", "success")
     if row and row["tipo"] == "gasto":
@@ -1178,12 +1308,12 @@ def servicios_eliminar(servicio_id):
 
 def _cliente_stats(db, nombre, hace_60):
     resumen = db.execute(
-        "SELECT COUNT(*) AS visitas, COALESCE(SUM(monto),0) AS total, MAX(fecha) AS ultima "
+        "SELECT COUNT(DISTINCT pedido_id) AS visitas, COALESCE(SUM(monto),0) AS total, MAX(fecha) AS ultima "
         "FROM transactions WHERE tipo='ingreso' AND LOWER(contraparte) = LOWER(?)",
         (nombre,),
     ).fetchone()
     visitas_recientes = db.execute(
-        "SELECT COUNT(*) AS c FROM transactions "
+        "SELECT COUNT(DISTINCT pedido_id) AS c FROM transactions "
         "WHERE tipo='ingreso' AND LOWER(contraparte) = LOWER(?) AND fecha >= ?",
         (nombre, hace_60),
     ).fetchone()["c"]
@@ -1971,32 +2101,41 @@ def _celda_int(valor):
 
 def _conciliar_comprobantes(db):
     """Cruza automaticamente por numero de factura (exacto, confiable).
+    Un comprobante de ARCA corresponde a un pedido completo (no a una linea suelta),
+    asi que el cruce se hace contra pedidos.numero_factura.
     El cruce manual (por si no coincide el numero) se hace desde la pantalla de Facturacion."""
-    pendientes = db.execute("SELECT * FROM comprobantes_arca WHERE ingreso_id IS NULL").fetchall()
+    pendientes = db.execute("SELECT * FROM comprobantes_arca WHERE pedido_id IS NULL").fetchall()
     if not pendientes:
         return
 
-    ingresos_con_num = db.execute(
-        "SELECT * FROM transactions WHERE tipo='ingreso' AND numero_factura IS NOT NULL AND numero_factura != ''"
+    pedidos_con_num = db.execute(
+        "SELECT * FROM pedidos WHERE numero_factura IS NOT NULL AND numero_factura != ''"
     ).fetchall()
 
     for c in pendientes:
         match = None
-        for ing in ingresos_con_num:
-            if _parse_numero_factura(ing["numero_factura"]) == (c["punto_venta"], c["numero_desde"]):
-                match = ing
+        for p in pedidos_con_num:
+            if _parse_numero_factura(p["numero_factura"]) == (c["punto_venta"], c["numero_desde"]):
+                match = p
                 break
 
         if match:
+            nuevo_num = _formatear_numero(c["punto_venta"], c["numero_desde"])
             db.execute(
-                "UPDATE comprobantes_arca SET ingreso_id=?, conciliado=1 WHERE id=?",
+                "UPDATE comprobantes_arca SET pedido_id=?, conciliado=1 WHERE id=?",
                 (match["id"], c["id"]),
+            )
+            db.execute(
+                "UPDATE pedidos SET facturado=1, "
+                "numero_factura = CASE WHEN numero_factura IS NULL OR numero_factura='' THEN ? ELSE numero_factura END "
+                "WHERE id=?",
+                (nuevo_num, match["id"]),
             )
             db.execute(
                 "UPDATE transactions SET facturado=1, "
                 "numero_factura = CASE WHEN numero_factura IS NULL OR numero_factura='' THEN ? ELSE numero_factura END "
-                "WHERE id=?",
-                (_formatear_numero(c["punto_venta"], c["numero_desde"]), match["id"]),
+                "WHERE pedido_id=?",
+                (nuevo_num, match["id"]),
             )
     db.commit()
 
@@ -2013,19 +2152,23 @@ def facturacion():
     total_conciliados = db.execute("SELECT COUNT(*) c FROM comprobantes_arca WHERE conciliado=1").fetchone()["c"]
 
     comprobantes_sin_ingreso = db.execute(
-        "SELECT * FROM comprobantes_arca WHERE ingreso_id IS NULL ORDER BY fecha DESC"
+        "SELECT * FROM comprobantes_arca WHERE pedido_id IS NULL ORDER BY fecha DESC"
     ).fetchall()
 
-    ingresos_sin_comprobante = db.execute(
-        "SELECT * FROM transactions WHERE tipo='ingreso' AND facturado=1 "
-        "AND id NOT IN (SELECT ingreso_id FROM comprobantes_arca WHERE ingreso_id IS NOT NULL) "
-        "ORDER BY fecha DESC"
+    # Un comprobante de ARCA corresponde a un pedido completo, no a una linea suelta.
+    pedidos_sin_comprobante = db.execute(
+        "SELECT p.*, COALESCE(SUM(t.monto),0) AS monto_total FROM pedidos p "
+        "LEFT JOIN transactions t ON t.pedido_id = p.id "
+        "WHERE p.facturado=1 "
+        "AND p.id NOT IN (SELECT pedido_id FROM comprobantes_arca WHERE pedido_id IS NOT NULL) "
+        "GROUP BY p.id ORDER BY p.fecha DESC"
     ).fetchall()
 
-    ingresos_vinculables = db.execute(
-        "SELECT * FROM transactions WHERE tipo='ingreso' "
-        "AND id NOT IN (SELECT ingreso_id FROM comprobantes_arca WHERE ingreso_id IS NOT NULL) "
-        "ORDER BY fecha DESC LIMIT 200"
+    pedidos_vinculables = db.execute(
+        "SELECT p.*, COALESCE(SUM(t.monto),0) AS monto_total FROM pedidos p "
+        "LEFT JOIN transactions t ON t.pedido_id = p.id "
+        "WHERE p.id NOT IN (SELECT pedido_id FROM comprobantes_arca WHERE pedido_id IS NOT NULL) "
+        "GROUP BY p.id ORDER BY p.fecha DESC LIMIT 200"
     ).fetchall()
 
     return render_template(
@@ -2034,8 +2177,8 @@ def facturacion():
         total_importados=total_importados,
         total_conciliados=total_conciliados,
         comprobantes_sin_ingreso=comprobantes_sin_ingreso,
-        ingresos_sin_comprobante=ingresos_sin_comprobante,
-        ingresos_vinculables=ingresos_vinculables,
+        pedidos_sin_comprobante=pedidos_sin_comprobante,
+        pedidos_vinculables=pedidos_vinculables,
         formatear_numero=_formatear_numero,
     )
 
@@ -2046,26 +2189,33 @@ def facturacion_vincular():
     db = get_db()
     try:
         comprobante_id = int(request.form.get("comprobante_id", ""))
-        ingreso_id = int(request.form.get("ingreso_id", ""))
+        pedido_id = int(request.form.get("pedido_id", ""))
     except (TypeError, ValueError):
-        flash("Elegi un ingreso para vincular", "error")
+        flash("Elegi un pedido para vincular", "error")
         return redirect(url_for("facturacion"))
 
     comp = db.execute("SELECT * FROM comprobantes_arca WHERE id = ?", (comprobante_id,)).fetchone()
-    ing = db.execute("SELECT * FROM transactions WHERE id = ? AND tipo='ingreso'", (ingreso_id,)).fetchone()
-    if not comp or not ing:
-        flash("No se encontro el comprobante o el ingreso", "error")
+    ped = db.execute("SELECT * FROM pedidos WHERE id = ?", (pedido_id,)).fetchone()
+    if not comp or not ped:
+        flash("No se encontro el comprobante o el pedido", "error")
         return redirect(url_for("facturacion"))
 
+    nuevo_num = _formatear_numero(comp["punto_venta"], comp["numero_desde"])
     db.execute(
-        "UPDATE comprobantes_arca SET ingreso_id=?, conciliado=1 WHERE id=?",
-        (ingreso_id, comprobante_id),
+        "UPDATE comprobantes_arca SET pedido_id=?, conciliado=1 WHERE id=?",
+        (pedido_id, comprobante_id),
+    )
+    db.execute(
+        "UPDATE pedidos SET facturado=1, "
+        "numero_factura = CASE WHEN numero_factura IS NULL OR numero_factura='' THEN ? ELSE numero_factura END "
+        "WHERE id=?",
+        (nuevo_num, pedido_id),
     )
     db.execute(
         "UPDATE transactions SET facturado=1, "
         "numero_factura = CASE WHEN numero_factura IS NULL OR numero_factura='' THEN ? ELSE numero_factura END "
-        "WHERE id=?",
-        (_formatear_numero(comp["punto_venta"], comp["numero_desde"]), ingreso_id),
+        "WHERE pedido_id=?",
+        (nuevo_num, pedido_id),
     )
     db.commit()
     flash("Comprobante vinculado", "success")
@@ -2082,7 +2232,7 @@ def facturacion_desvincular():
         return redirect(url_for("facturacion"))
 
     db.execute(
-        "UPDATE comprobantes_arca SET ingreso_id=NULL, conciliado=0 WHERE id=?",
+        "UPDATE comprobantes_arca SET pedido_id=NULL, conciliado=0 WHERE id=?",
         (comprobante_id,),
     )
     db.commit()
